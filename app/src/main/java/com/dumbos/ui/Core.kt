@@ -110,7 +110,15 @@ object Px {
     val paint = Paint().apply { isAntiAlias = false; typeface = Typeface.MONOSPACE }
     private val glyphs = HashMap<String, Bitmap>()
 
-    /** 1-bit glyph mask, cached per glyph id. Tinted at draw time. */
+    /**
+     * 1-bit glyph mask, cached per glyph id. Tinted at draw time.
+     *
+     * The bitmap is ALPHA_8, so every pixel is *only* an alpha value. setPixels()
+     * takes ARGB ints and keeps the alpha channel, which means the value has to
+     * be 0xFF000000 (opaque), not 0xFF: 0x000000FF is fully transparent and every
+     * glyph drew as an invisible hole. Rectangles were unaffected, which is why
+     * the UI showed selection bars and rules but no text.
+     */
     fun glyph(key: String, rows: Array<String>): Bitmap {
         glyphs[key]?.let { return it }
         val w = rows[0].length
@@ -118,12 +126,14 @@ object Px {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
         val px = IntArray(w * h)
         for (y in 0 until h) for (x in 0 until w) {
-            px[y * w + x] = if (rows[y][x] == '#') 255 else 0
+            px[y * w + x] = if (rows[y][x] == '#') OPAQUE else 0
         }
         bmp.setPixels(px, 0, w, 0, 0, w, h)
         glyphs[key] = bmp
         return bmp
     }
+
+    private const val OPAQUE = 0xFF shl 24 // 0xFF000000: fully opaque alpha
 }
 
 /** Draws the bitmap font. Stateless; safe to share. */

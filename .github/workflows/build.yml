@@ -63,6 +63,14 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      # Cheap, deterministic guards for the drawing invariants that glyph
+      # visibility depends on (see tools/test_pixels.py).
+      - name: Pixel invariants
+        run: |
+          python3 tools/test_pixels.py
+          python3 tools/gen.py && git diff --exit-code web/pixel-widgets.js \
+            app/src/main/java/com/dumbos/ui/PixelWidgets.kt
+
       - name: Build debug APK
         run: |
           set +e

@@ -60,12 +60,12 @@ Cosas que probar:
 
 ## Descargar la APK
 
-Las versiones publicadas están en **[Releases](../../releases)**. La última es **v1.0.1**. Cada una trae:
+Las versiones publicadas están en **[Releases](../../releases)**. La última es **v1.0.2**. Cada una trae:
 
 | Fichero | Para qué |
 |---|---|
-| `dumbOS-v1.0.1.apk` | Release firmada. Instala esta. |
-| `dumbOS-v1.0.1-debug.apk` | Depuración, convive con la anterior (paquete `.debug`). |
+| `dumbOS-v1.0.2.apk` | Release firmada. Instala esta. |
+| `dumbOS-v1.0.2-debug.apk` | Depuración, convive con la anterior (paquete `.debug`). |
 | `SHA256SUMS.txt` | Sumas para comprobar la descarga. |
 
 Instalación: descarga el APK, ábrelo en el móvil (Android 8 o superior) y acepta instalar desde el
@@ -104,6 +104,15 @@ build y **falla si el firmante no es `CN=dumbOS`**.
 
 La comprobación de clases es la que evita el fallo clásico: un componente declarado en el
 manifiesto que el compilador no metió en el DEX instala bien y revienta al abrir.
+
+`tools/test_pixels.py` corre antes de compilar y vigila las dos invariantes que hacían invisible
+el texto:
+
+- las máscaras de glifo son `ALPHA_8`, así que un píxel encendido se escribe `0xFF000000`
+  (`255` es **transparente**: alfa 0, y el texto desaparece mientras los rectángulos se ven);
+- `measure()` y `draw()` avanzan el mismo ancho para cada carácter.
+
+`tools/test_render.js` comprueba además que la previa pinta de verdad (cuenta píxeles encendidos).
 
 ### Publicar una versión
 
