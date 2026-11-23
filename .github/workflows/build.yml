@@ -19,11 +19,38 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # GitHub's Ubuntu images ship the Android SDK already; using it avoids a
+      # third-party setup action and its download step.
+      - name: Point at the runner's Android SDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "No preinstalled SDK at $SDK" >&2
+            exit 1
+          fi
+          echo "Using SDK at $SDK"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          ls "$SDK/platforms" || true
+          ls "$SDK/build-tools" || true
+
+      - name: Ensure platform 34 and build-tools
+        run: |
+          SDK="$ANDROID_SDK_ROOT"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          NEED=""
+          [ -d "$SDK/platforms/android-34" ] || NEED="$NEED platforms;android-34"
+          [ -d "$SDK/build-tools/34.0.0" ] || NEED="$NEED build-tools;34.0.0"
+          if [ -n "$NEED" ]; then
+            sdkmanager $NEED
+          else
+            echo "platform 34 and build-tools 34.0.0 already present"
+          fi
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
@@ -32,6 +59,15 @@ jobs:
 
       - name: Build release APK (debug-signed)
         run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Report APK contents
+        run: |
+          for apk in app/build/outputs/apk/*/*.apk; do
+            echo "== $apk"
+            ls -lh "$apk"
+            "${ANDROID_SDK_ROOT}/build-tools/34.0.0/aapt2" dump badging "$apk" \
+              | grep -E "^(package|application-label|launchable-activity)" || true
+          done
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
