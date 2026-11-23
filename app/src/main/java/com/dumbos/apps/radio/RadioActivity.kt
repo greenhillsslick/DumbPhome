@@ -37,14 +37,14 @@ import kotlin.random.Random
 class RadioActivity : OsActivity() {
 
     private val stations = listOf(
-        Station(87.6f, "RADIO VALENCIA", "MUSICA Y NOTICIAS"),
-        Station(89.2f, "CADENA SOL", "EXITOS DE LOS 80"),
-        Station(91.5f, "FM 91", "POP INTERNACIONAL"),
-        Station(94.8f, "RADIO CLASICA", "CONCIERTOS Y OPERA"),
-        Station(98.3f, "LOS40", "LISTA ACTUAL"),
-        Station(101.1f, "ROCK FM", "GUITARRAS"),
-        Station(103.7f, "RADIO MAR", "LOCAL, TODO EL DIA"),
-        Station(106.4f, "NOCTURNA", "JAZZ DE MADRUGADA"),
+        StationLookup(87.6f, "RADIO VALENCIA", "MUSICA Y NOTICIAS"),
+        StationLookup(89.2f, "CADENA SOL", "EXITOS DE LOS 80"),
+        StationLookup(91.5f, "FM 91", "POP INTERNACIONAL"),
+        StationLookup(94.8f, "RADIO CLASICA", "CONCIERTOS Y OPERA"),
+        StationLookup(98.3f, "LOS40", "LISTA ACTUAL"),
+        StationLookup(101.1f, "ROCK FM", "GUITARRAS"),
+        StationLookup(103.7f, "RADIO MAR", "LOCAL, TODO EL DIA"),
+        StationLookup(106.4f, "NOCTURNA", "JAZZ DE MADRUGADA"),
     )
 
     private var freq = 87.6f
@@ -53,8 +53,6 @@ class RadioActivity : OsActivity() {
     private var tone: Carrier? = null
     private var volume = 0.6f
     private var favorites = ArrayList<Float>()
-
-    private typealias Station = StationLookup
 
     override fun buildLayout() {
         titleText = "RADIO FM"
@@ -100,9 +98,9 @@ class RadioActivity : OsActivity() {
         dial?.invalidate()
     }
 
-    private fun nearest(): Station? = nearestTo(freq)
+    private fun nearest(): StationLookup? = nearestTo(freq)
 
-    private fun nearestTo(f: Float): Station? = stations.minByOrNull { abs(it.freq - f) }?.takeIf { abs(it.freq - f) < 0.45f }
+    private fun nearestTo(f: Float): StationLookup? = stations.minByOrNull { abs(it.freq - f) }?.takeIf { abs(it.freq - f) < 0.45f }
 
     private fun tune(f: Float) {
         val st = nearest()

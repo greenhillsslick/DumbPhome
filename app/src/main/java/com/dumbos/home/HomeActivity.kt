@@ -268,7 +268,9 @@ class ClockView(ctx: Context) : View(ctx) {
 
     override fun onDraw(canvas: Canvas) {
         val time = Clock.hm()
-        val glyphUnits = TYPO.normalize(time).sumOf { if (it == ' ') 3 else 6 } - 1
+        // One "unit" is the width of a font pixel: glyphs advance 6 units and a
+        // space 3, minus the trailing gap of the last glyph.
+        val glyphUnits = TYPO.normalize(time).fold(0) { acc: Int, c: Char -> acc + if (c == ' ') 3 else 6 } - 1
         val unit = max(1, (width * 0.66f / glyphUnits.toFloat()).toInt())
         val tw = glyphUnits * unit
         val x = (width - tw) / 2
