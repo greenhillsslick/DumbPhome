@@ -7,13 +7,19 @@ set -euo pipefail
 APK="${1:?usage: tools/audit_apk.sh path/to.apk}"
 BT="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}/build-tools/34.0.0"
 
-echo "================ APK AUDIT: $APK"
+MODE="${2:-full}"
+echo "================ APK AUDIT: $APK ($MODE)"
 ls -l "$APK"
 
-echo
-echo "---- badging ----"
-"$BT/aapt2" dump badging "$APK" |
-  grep -E "^(package|sdkVersion|targetSdkVersion|application-label|launchable-activity)" || true
+if [ "$MODE" = "summary" ]; then
+  echo "---- badging ----"
+  "$BT/aapt2" dump badging "$APK" |
+    grep -E "^(package|sdkVersion|targetSdkVersion|application-label|launchable-activity)" || true
+  echo
+  echo "---- size ----"
+  du -h "$APK"
+  exit 0
+fi
 
 echo
 echo "---- signer ----"

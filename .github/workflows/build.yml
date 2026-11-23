@@ -99,9 +99,13 @@ jobs:
       - name: Audit the release APK
         run: |
           set +e
-          tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk 2>&1 | tee /tmp/audit.log
-          status=${PIPESTATUS[0]}
-          python3 tools/post_log.py /tmp/audit.log 12000 || true
+          tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk summary > /tmp/summary.log 2>&1
+          tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk > /tmp/audit.log 2>&1
+          status=$?
+          cat /tmp/summary.log
+          tail -40 /tmp/audit.log
+          # Runner logs are not readable from every client; the commit comment is.
+          python3 tools/post_audit.py /tmp/summary.log /tmp/audit.log || true
           exit "$status"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
