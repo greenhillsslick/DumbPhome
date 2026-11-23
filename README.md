@@ -53,6 +53,17 @@ Cosas que probar:
 - **WhatsApp**: abre una conversación, pulsa **OK** y escribe; verás cómo se puentea la respuesta.
 - **Navegador**: `MENU → IR A URL` abre páginas de demostración con el mismo motor de extracción de texto.
 
+## Descargar la APK
+
+Cada push compila los dos APK (debug y release, este último firmado con la clave de debug para
+poder instalarlo directamente) y los publica como artefacto **`dumbos-apks`**:
+
+1. Abre la pestaña **Actions** del repositorio.
+2. Entra en la última ejecución verde de *Build dumbOS APK*.
+3. Descarga **`dumbos-apks`** al final de la página y elige `app-debug.apk` o `app-release.apk`.
+
+Instálalo en el móvil (Android 8 o superior) y actívalo como aplicación de inicio.
+
 ## Compilar la APK
 
 Requisitos: **JDK 17** + **Android SDK** (compileSdk 34). No hay dependencias de terceros: solo framework APIs.
