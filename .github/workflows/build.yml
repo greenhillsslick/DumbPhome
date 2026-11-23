@@ -97,7 +97,14 @@ jobs:
           grep -q "CN=dumbOS" /tmp/certs.txt || { echo "unexpected signer" >&2; exit 1; }
 
       - name: Audit the release APK
-        run: tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk
+        run: |
+          set +e
+          tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk 2>&1 | tee /tmp/audit.log
+          status=${PIPESTATUS[0]}
+          python3 tools/post_log.py /tmp/audit.log 12000 || true
+          exit "$status"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Report APK contents
         run: |
