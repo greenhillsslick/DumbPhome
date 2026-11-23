@@ -1,0 +1,18 @@
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+!app/debug.keystore
+
+# Generated toolchain downloads (local only)
+.toolchain/
+
+# Editor / OS
+.idea/
+*.iml
+.DS_Store

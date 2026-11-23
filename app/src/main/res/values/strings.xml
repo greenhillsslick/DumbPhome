@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">dumbOS</string>
+    <string name="app_phone">Telefono</string>
+    <string name="app_sms">Mensajes</string>
+    <string name="app_settings">Ajustes</string>
+    <string name="app_mail">Correo</string>
+    <string name="app_notes">Notas</string>
+    <string name="app_browser">Navegador</string>
+    <string name="app_whatsapp">Puente WhatsApp</string>
+    <string name="app_radio">Radio FM</string>
+    <string name="app_alarm">Alarmas</string>
+    <string name="notif_listener">dumbOS: puente de notificaciones</string>
+</resources>
