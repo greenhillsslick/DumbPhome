@@ -23,14 +23,38 @@ import kotlin.math.roundToInt
 /** Pixel-perfect density helpers. All layout is in whole device pixels. */
 object Dp {
     @Volatile private var density = 3f
-    fun init(ctx: Context) { density = ctx.resources.displayMetrics.density }
+
+    /**
+     * A uniform multiplier applied to every measurement, derived from how wide
+     * the screen is in dp.
+     *
+     * dumbOS is drawn in dp, never in sp, so it ignores the system font scale
+     * (the layout would break if a user's 1.3x text setting stretched a 5x7
+     * glyph grid). Without this factor the same 12dp text is physically smaller
+     * on a 384dp-wide phone than on a 411dp one, which is the closest thing
+     * this UI has to "the text is too small".
+     *
+     * Clamped so tiny phones stay readable and tablets don't get cartoonish.
+     */
+    @Volatile private var uiScale = 1f
+
+    fun init(ctx: Context) {
+        val dm = ctx.resources.displayMetrics
+        density = dm.density
+        val widthDp = if (dm.widthPixels > 0) dm.widthPixels / dm.density else 392f
+        // 392dp (Pixel 4a-ish) is the reference width.
+        uiScale = (widthDp / 392f).coerceIn(0.92f, 1.18f)
+    }
+
     /**
      * Zero must stay zero: a 0dp gap or a 0-thickness rule is meaningful, and
      * clamping it to 1 would silently shift every layout that uses it.
      */
-    fun dp(v: Int): Int = if (v == 0) 0 else max(1, (v * density).roundToInt())
-    fun dpf(v: Float): Float = v * density
+    fun dp(v: Int): Int = if (v == 0) 0 else max(1, (v * density * uiScale).roundToInt())
+    fun dpf(v: Float): Float = v * density * uiScale
     fun density(): Float = density
+    /** The width-derived multiplier, exposed for text-fitting decisions. */
+    fun scale(): Float = uiScale
 }
 
 /**
@@ -131,12 +155,19 @@ class Typo {
         return (if (small) SMALL_GLYPHS[c.toString()] else BIG_GLYPHS[c.toString()])
     }
 
+    /**
+     * Mirrors draw() exactly: a glyph with no bitmap still reserves space, and it
+     * must reserve the same amount the renderer advances. When these disagreed,
+     * drawRight/ drawCenter computed a start point for a wider string than was
+     * actually drawn, so centred and right-aligned text drifted left and could
+     * run into its neighbour.
+     */
     fun measure(text: String, size: Sz): Int {
         val s = normalize(text)
         if (s.isEmpty()) return 0
         var units = 0
-        for (c in s) units += if (c == ' ') 3 else (if (rowsFor(c, size.small) == null) size.adv - 1 else size.adv)
-        return (units - 1) * size.unitPx()
+        for (c in s) units += if (c == ' ') 3 else size.adv
+        return max(0, (units - 1) * size.unitPx())
     }
 
     fun draw(canvas: Canvas, text: String, x: Int, y: Int, size: Sz, color: Int): Int {
@@ -148,7 +179,22 @@ class Typo {
         for (c in s) {
             if (c == ' ') { cx += 3 * unit; continue }
             val rows = rowsFor(c, size.small)
-            if (rows == null) { cx += (size.adv - 1) * unit; continue }
+            if (rows == null) {
+                // No bitmap for this character: reserve a full advance (as
+                // measure() does) and draw a hollow box so a missing glyph is
+                // visible in the UI instead of a silent gap.
+                Px.paint.color = color
+                Px.paint.alpha = 255
+                Px.paint.style = Paint.Style.STROKE
+                Px.paint.strokeWidth = max(1f, unit.toFloat() / 2f)
+                canvas.drawRect(
+                    cx.toFloat() + unit / 2f, y.toFloat() + unit / 2f,
+                    cx + (size.glyphW - 0.5f) * unit, y + (size.glyphH - 0.5f) * unit,
+                    Px.paint)
+                Px.paint.style = Paint.Style.FILL
+                cx += size.adv * unit
+                continue
+            }
             val key = (if (size.small) "s" else "b") + c.code
             val bmp = Px.glyph(key, rows)
             canvas.drawBitmap(bmp, null,

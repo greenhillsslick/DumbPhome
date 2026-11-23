@@ -43,6 +43,11 @@ node web/serve.js 8080
 O abre directamente **`web/dumbos.html`**: es la misma previa en un solo fichero, sin dependencias
 (`python3 tools/inline_web.py` lo regenera desde las fuentes).
 
+La previa se adapta a la ventana: el teléfono se escala para caber entero y, en pantallas estrechas,
+pasa por delante del texto. Si lo ves cortado o "vacío", es que faltaba este ajuste; recarga la página.
+
+![La previa en móvil y en escritorio](media/responsive.png)
+
 La previa dibuja un teléfono 3310 completo: pantalla, dos teclas blandas, cruceta y teclado numérico
 funcional. Todo responde al ratón, al tacto y al teclado real (`↑ ↓ ← →`, `Enter`, `Retroceso`, `M`, `0-9`, `*`, `#`).
 

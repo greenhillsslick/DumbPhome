@@ -19,6 +19,49 @@ const View = {
 // ---------------------------------------------------------------------------
 // device sizing
 // ---------------------------------------------------------------------------
+/**
+ * Fits the whole phone inside the viewport.
+ *
+ * The shell is ~918px tall. On a laptop (720px) or a phone browser (844px) that
+ * does not fit, and because the screen sits at the bottom of the shell the
+ * visible result is an apparently blank device. Scaling the shell down (CSS
+ * transform, one uniform factor) keeps the canvas crisp: the browser scales the
+ * already-rasterised bitmap instead of re-rasterising at a fractional DPR.
+ */
+function fitDevice() {
+  const device = document.querySelector('.device');
+  if (!device) return;
+  const side = document.querySelector('.side');
+  const portrait = window.innerWidth < 860;
+
+  device.style.setProperty('--scale', '1');
+  device.style.marginBottom = '';
+  device.style.marginTop = '';
+  const natural = device.getBoundingClientRect();
+  const sideH = side ? side.getBoundingClientRect().height : 0;
+
+  const padX = portrait ? 10 : 28;
+  const padY = portrait ? 10 : 24;
+  const sideW = side && !portrait ? side.getBoundingClientRect().width + 40 : 0;
+  const availW = window.innerWidth - padX * 2 - sideW;
+
+  // In portrait the phone shares the column with the text below it, so it may
+  // only take part of the height; a little of the panel peeking in is fine.
+  let availH = window.innerHeight - padY * 2;
+  if (portrait) availH = availH - Math.min(sideH * 0.45, 150);
+
+  let scale = Math.min(availW / natural.width, availH / natural.height, 1.15);
+  scale = Math.max(0.4, scale);
+  scale = Math.round(scale * 100) / 100;
+  device.style.setProperty('--scale', String(scale));
+
+  // The element keeps its untransformed box in layout, so a scaled-down shell
+  // leaves a gap below it. With a top-left origin that gap is exact.
+  device.style.marginBottom = scale === 1
+    ? ''
+    : (-natural.height * (1 - scale)) + 'px';
+}
+
 function resize() {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
   canvas.width = D.W * dpr;
@@ -27,6 +70,7 @@ function resize() {
   canvas.style.height = D.H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  fitDevice();
   draw();
 }
 
@@ -611,6 +655,8 @@ function radioDrag(e) {
 
 // boot
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 down('__boot');
 wireRail();
 resize();
