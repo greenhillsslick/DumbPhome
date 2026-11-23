@@ -109,8 +109,11 @@ jobs:
       - name: Stage release assets
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/dumbOS-${{ github.ref_name }}.apk
-          cp app/build/outputs/apk/debug/app-debug.apk dist/dumbOS-${{ github.ref_name }}-debug.apk
+          # On a branch github.ref_name contains slashes, so only a tag produces
+          # release assets; a branch build stops at the plain APK artifact.
+          NAME="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'snapshot' }}"
+          cp app/build/outputs/apk/release/app-release.apk "dist/dumbOS-${NAME}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/dumbOS-${NAME}-debug.apk"
           cd dist && sha256sum ./*.apk > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - name: Upload APKs
