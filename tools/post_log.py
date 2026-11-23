@@ -19,7 +19,17 @@ repo = os.environ["GITHUB_REPOSITORY"]
 sha = os.environ["GITHUB_SHA"]
 
 with open(log_path, "r", errors="replace") as fh:
-    text = fh.read()[-limit:]
+    whole = fh.read()
+
+# Prefer the first real error (Kotlin/AAPT/Gradle) over the noise at the tail.
+interesting = [
+    line for line in whole.splitlines()
+    if any(token in line for token in (
+        "e: file", "error:", "FAILURE:", "What went wrong", "Caused by", "> Task :", "BUILD FAILED",
+    ))
+]
+head = "\n".join(interesting[:80])
+text = (head + "\n\n--- tail ---\n" + whole[-3000:])[-limit:]
 text = text.replace("```", "'''")
 
 request = urllib.request.Request(

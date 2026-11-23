@@ -1,5 +1,9 @@
 name: Build dumbOS APK
 
+# Needed so a failing build can write its log back to the commit.
+permissions:
+  contents: write
+
 on:
   push:
     branches: ["**"]
