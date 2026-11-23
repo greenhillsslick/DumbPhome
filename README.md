@@ -84,6 +84,22 @@ keytool -list -v -keystore signing/dumbos-release.jks -storepass dumbos-release
 `apksigner verify --print-certs app-release.apk` confirma la firma; el workflow lo hace en cada
 build y **falla si el firmante no es `CN=dumbOS`**.
 
+### Qué comprueba CI sobre el APK
+
+`tools/audit_apk.sh` corre en cada build y sobre la release publicada:
+
+| Comprobación | Resultado de v1.0.0 |
+|---|---|
+| badging | `com.dumbos` v1.0.0, minSdk 26, targetSdk 34 |
+| firma | v2 verificada, RSA 4096, `CN=dumbOS` |
+| componentes del manifiesto | 16 declarados |
+| clases en el DEX | 15/15 presentes (el alias resuelve a `HomeActivity`) |
+| `zipalign -c 4` | correcto |
+| tamaño | 764 KB |
+
+La comprobación de clases es la que evita el fallo clásico: un componente declarado en el
+manifiesto que el compilador no metió en el DEX instala bien y revienta al abrir.
+
 ### Publicar una versión
 
 ```bash
