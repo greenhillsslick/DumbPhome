@@ -38,6 +38,9 @@ node web/serve.js 8080
 # abre http://localhost:8080
 ```
 
+O abre directamente **`web/dumbos.html`**: es la misma previa en un solo fichero, sin dependencias
+(`python3 tools/inline_web.py` lo regenera desde las fuentes).
+
 La previa dibuja un teléfono 3310 completo: pantalla, dos teclas blandas, cruceta y teclado numérico
 funcional. Todo responde al ratón, al tacto y al teclado real (`↑ ↓ ← →`, `Enter`, `Retroceso`, `M`, `0-9`, `*`, `#`).
 

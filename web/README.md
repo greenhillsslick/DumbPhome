@@ -16,6 +16,13 @@ node web/serve.js 8080     # http://localhost:8080
 | `preview.js` | Cuerpo del 3310, cruceta, teclas y enrutado de eventos. |
 | `audio.js` | Radio sintetizada (portadora + estática) con WebAudio. |
 | `index.html` | Carcasa del dispositivo y estilos. |
+| `dumbos.html` | **Generado** por `tools/inline_web.py`: los cinco scripts dentro del HTML, para iframes que bloquean subrecursos. |
+
+Para volver a generar `dumbos.html` tras tocar cualquiera de los otros ficheros:
+
+```bash
+python3 tools/inline_web.py
+```
 
 ## Controles
 
