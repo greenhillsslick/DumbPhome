@@ -22,7 +22,12 @@ def commit_subjects() -> list[str]:
         raw = sh("git", "log", "--no-merges", "--pretty=%s", "main..HEAD")
     except subprocess.CalledProcessError:
         raw = sh("git", "log", "--no-merges", "--pretty=%s", "-20")
-    return [line for line in raw.splitlines() if line.strip()]
+    # Maintenance commits (ci:, docs:, chore:) are not user-facing changes.
+    noise = ("ci:", "docs:", "chore:", "test:", "style:")
+    return [
+        line for line in raw.splitlines()
+        if line.strip() and not line.lower().startswith(noise)
+    ]
 
 
 sys.path.insert(0, "tools")
@@ -78,5 +83,11 @@ lines = [
     "## Cambios",
     "",
 ]
-lines += [f"- {s}" for s in commit_subjects()]
+subjects = commit_subjects()
+lines += [f"- {s}" for s in subjects] or ["- Versión inicial."]
+lines += [
+    "",
+    f"**Changelog completo**: "
+    f"https://github.com/greenhillsslick/DumbPhome/commits/{TAG}",
+]
 print("\n".join(lines))

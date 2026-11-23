@@ -96,6 +96,9 @@ jobs:
           "$BT/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
           grep -q "CN=dumbOS" /tmp/certs.txt || { echo "unexpected signer" >&2; exit 1; }
 
+      - name: Audit the release APK
+        run: tools/audit_apk.sh app/build/outputs/apk/release/app-release.apk
+
       - name: Report APK contents
         run: |
           BT="$ANDROID_SDK_ROOT/build-tools/34.0.0"
@@ -115,6 +118,8 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "dist/dumbOS-${NAME}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "dist/dumbOS-${NAME}-debug.apk"
           cd dist && sha256sum ./*.apk > SHA256SUMS.txt && cat SHA256SUMS.txt
+          cd .. && python3 tools/release_notes.py "${NAME}" > dist/RELEASE_NOTES.md
+          head -20 dist/RELEASE_NOTES.md
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -137,23 +142,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
-          body: |
-            **dumbOS ${{ github.ref_name }}** — launcher de Android con estética de dumbphone.
-
-            | Fichero | Para qué |
-            |---|---|
-            | `dumbOS-${{ github.ref_name }}.apk` | Release firmada. Instala esta. |
-            | `dumbOS-${{ github.ref_name }}-debug.apk` | Depuración; convive con la otra (paquete `.debug`). |
-            | `SHA256SUMS.txt` | Sumas de verificación. |
-
-            Instalación: descarga el APK, ábrelo en el móvil (Android 8 o superior) y acepta
-            la instalación desde el navegador. Después: **Ajustes → Aplicaciones → Aplicación
-            de inicio → dumbOS**.
-
-            La clave de firma está en el repositorio (`signing/`), así que las versiones se
-            actualizan entre sí sin desinstalar. Se instala junto a la que ya tengas solo si
-            esa también la instalaste desde aquí.
+          # body_path provides the notes; the automatic changelog is appended by
+          # tools/release_notes.py itself, so it is not requested twice.
+          generate_release_notes: false
+          body_path: dist/RELEASE_NOTES.md
           files: |
             dist/*.apk
             dist/SHA256SUMS.txt
