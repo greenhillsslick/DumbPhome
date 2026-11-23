@@ -51,8 +51,7 @@ version = re.search(
 lines = [
     f"# dumbOS {version}",
     "",
-    "Primera versión publicada del launcher. Instala, elige dumbOS como aplicación de "
-    "inicio y el móvil se queda con lo justo.",
+    "Instala, elige dumbOS como aplicación de inicio y el móvil se queda con lo justo.",
     "",
     "## Qué incluye",
     "",
