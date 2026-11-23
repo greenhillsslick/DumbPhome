@@ -6,7 +6,7 @@
 
 Monocromo · Tipografía de píxeles 5×7 · Iconos 16×16 · Sin animaciones, sin sombras, sin colores gritones
 
-[`Vista previa interactiva`](#vista-previa-interactiva) · [`Compilar`](#compilar-la-apk) · [`Las apps`](#las-nueve-apps) · [`Permisos`](#permisos-y-privacidad) · [`Arquitectura`](#arquitectura)
+[`Vista previa`](#vista-previa-interactiva) · [`Descargar la APK`](#descargar-la-apk) · [`Las apps`](#las-nueve-apps) · [`Permisos`](#permisos-y-privacidad) · [`Arquitectura`](#arquitectura)
 
 </div>
 
