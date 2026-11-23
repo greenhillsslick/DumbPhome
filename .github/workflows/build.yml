@@ -1,12 +1,14 @@
 name: Build dumbOS APK
 
-# Needed so a failing build can write its log back to the commit.
+# Needed so a failing build can write its log back to the commit, and so a
+# v* tag can publish a release with the APKs attached.
 permissions:
   contents: write
 
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -16,6 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so `git describe`/tags are available to the release step.
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -72,17 +77,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build release APK (debug-signed)
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+      - name: Build release APK (signed)
+        run: |
+          set +e
+          gradle :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/build-release.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            python3 tools/post_log.py /tmp/build-release.log
+          fi
+          exit "$status"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the release signature
+        run: |
+          BT="$ANDROID_SDK_ROOT/build-tools/34.0.0"
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$BT/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
+          grep -q "CN=dumbOS" /tmp/certs.txt || { echo "unexpected signer" >&2; exit 1; }
 
       - name: Report APK contents
         run: |
+          BT="$ANDROID_SDK_ROOT/build-tools/34.0.0"
           for apk in app/build/outputs/apk/*/*.apk; do
             echo "== $apk"
             ls -lh "$apk"
-            "${ANDROID_SDK_ROOT}/build-tools/34.0.0/aapt2" dump badging "$apk" \
+            "$BT/aapt2" dump badging "$apk" \
               | grep -E "^(package|application-label|launchable-activity)" || true
           done
+
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/dumbOS-${{ github.ref_name }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/dumbOS-${{ github.ref_name }}-debug.apk
+          cd dist && sha256sum ./*.apk > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -91,4 +120,37 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            dist/SHA256SUMS.txt
           if-no-files-found: error
+
+      # ------------------------------------------------------------------
+      # Publishing: only for v* tags. A branch push stops at the artifact.
+      # ------------------------------------------------------------------
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: dumbOS ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            **dumbOS ${{ github.ref_name }}** — launcher de Android con estética de dumbphone.
+
+            | Fichero | Para qué |
+            |---|---|
+            | `dumbOS-${{ github.ref_name }}.apk` | Release firmada. Instala esta. |
+            | `dumbOS-${{ github.ref_name }}-debug.apk` | Depuración; convive con la otra (paquete `.debug`). |
+            | `SHA256SUMS.txt` | Sumas de verificación. |
+
+            Instalación: descarga el APK, ábrelo en el móvil (Android 8 o superior) y acepta
+            la instalación desde el navegador. Después: **Ajustes → Aplicaciones → Aplicación
+            de inicio → dumbOS**.
+
+            La clave de firma está en el repositorio (`signing/`), así que las versiones se
+            actualizan entre sí sin desinstalar. Se instala junto a la que ya tengas solo si
+            esa también la instalaste desde aquí.
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt

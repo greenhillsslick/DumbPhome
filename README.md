@@ -55,14 +55,45 @@ Cosas que probar:
 
 ## Descargar la APK
 
-Cada push compila los dos APK (debug y release, este último firmado con la clave de debug para
-poder instalarlo directamente) y los publica como artefacto **`dumbos-apks`**:
+Las versiones publicadas están en **[Releases](../../releases)**. Cada una trae:
 
-1. Abre la pestaña **Actions** del repositorio.
-2. Entra en la última ejecución verde de *Build dumbOS APK*.
-3. Descarga **`dumbos-apks`** al final de la página y elige `app-debug.apk` o `app-release.apk`.
+| Fichero | Para qué |
+|---|---|
+| `dumbOS-v1.0.0.apk` | Release firmada. Instala esta. |
+| `dumbOS-v1.0.0-debug.apk` | Depuración, convive con la anterior (paquete `.debug`). |
+| `SHA256SUMS.txt` | Sumas para comprobar la descarga. |
 
-Instálalo en el móvil (Android 8 o superior) y actívalo como aplicación de inicio.
+Instalación: descarga el APK, ábrelo en el móvil (Android 8 o superior) y acepta instalar desde el
+navegador. Después, **Ajustes → Aplicaciones → Aplicación de inicio → dumbOS**.
+
+Si prefieres la última compilación de la rama, cualquier push deja los APK en el artefacto
+**`dumbos-apks`** de la pestaña **Actions**.
+
+### Firma
+
+La clave de release está en el repositorio (`signing/dumbos-release.jks`, alias `dumbos`). Es
+deliberado: dumbOS no tiene distribución detrás y una clave estable hace que las versiones se
+instalen encima sin desinstalar. Antes de publicar algo serio, cambia la clave y guárdala en
+privado.
+
+```bash
+keytool -list -v -keystore signing/dumbos-release.jks -storepass dumbos-release
+# SHA-256: 87:1F:37:D3:77:0C:16:C1:49:D0:CC:F6:76:AC:79:B8:E7:24:40:DF:A5:B0:4C:0F:4E:63:4F:1A:38:BC:EB:C8
+```
+
+`apksigner verify --print-certs app-release.apk` confirma la firma; el workflow lo hace en cada
+build y **falla si el firmante no es `CN=dumbOS`**.
+
+### Publicar una versión
+
+```bash
+git tag -a v1.0.0 -m "dumbOS 1.0.0"
+git push origin v1.0.0
+```
+
+El workflow detecta el tag `v*`, compila, verifica la firma, genera las notas con
+`tools/release_notes.py` (números sacados de los generadores, no escritos a mano) y crea la
+release con los APK y las sumas adjuntas.
 
 ## Compilar la APK
 
@@ -76,8 +107,7 @@ gradle :app:assembleDebug          # o ./gradlew si generas el wrapper
 
 - `minSdk 26` (Android 8) · `targetSdk 34`
 - `applicationId com.dumbos`
-- El workflow de **GitHub Actions** (`.github/workflows/build.yml`) genera `assembleDebug` y `assembleRelease` en cada push y los adjunta como artefactos.
-- El `release` va firmado con la clave de debug para que puedas instalarlo directamente; cambia la firma en `app/build.gradle.kts` para distribuir.
+- El workflow de **GitHub Actions** (`.github/workflows/build.yml`) compila `assembleDebug` y `assembleRelease` en cada push; los tags `v*` además publican la release.
 
 ### Verificar sin Gradle
 

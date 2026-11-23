@@ -9,6 +9,11 @@ local.properties
 *.keystore
 !app/debug.keystore
 
+# dumbOS commits its release key on purpose (see app/build.gradle.kts): a stable
+# signature lets releases update each other. Replace it and keep yours private
+# before shipping anything you care about.
+!signing/dumbos-release.jks
+
 # Generated toolchain downloads (local only)
 .toolchain/
 

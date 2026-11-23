@@ -41,6 +41,7 @@
         <!-- ============================ LAUNCHER ============================ -->
         <activity
             android:name=".home.HomeActivity"
+            android:label="@string/app_home"
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"

@@ -12,18 +12,35 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
+    }
+
+    /**
+     * Release signing. The keystore in signing/ is committed on purpose: dumbOS
+     * has no distribution behind it and a stable key means builds from this repo
+     * update each other instead of being "installed over" with a signature
+     * mismatch. Replace it with your own (and keep it private) before shipping
+     * anything you care about.
+     */
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("signing/dumbos-release.jks")
+            storePassword = System.getenv("DUMBOS_STORE_PASSWORD") ?: "dumbos-release"
+            keyAlias = System.getenv("DUMBOS_KEY_ALIAS") ?: "dumbos"
+            keyPassword = System.getenv("DUMBOS_KEY_PASSWORD") ?: "dumbos-release"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Debug-signed for easy sideloading; swap in your own keystore for
-            // anything you intend to distribute.
-            signingConfig = signingConfigs.getByName("debug")
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
     }
 
@@ -40,4 +57,8 @@ android {
     lint {
         abortOnError = false
     }
+}
+
+dependencies {
+    // None. dumbOS is framework APIs only, by design.
 }

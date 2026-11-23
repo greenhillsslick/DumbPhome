@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">dumbOS</string>
+    <string name="app_home">dumbOS</string>
     <string name="app_phone">Telefono</string>
     <string name="app_sms">Mensajes</string>
     <string name="app_settings">Ajustes</string>
