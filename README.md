@@ -12,6 +12,8 @@ Monocromo · Tipografía de píxeles 5×7 · Iconos 16×16 · Sin animaciones, s
 
 ![Pantalla de inicio de dumbOS](media/screens/home.png)
 
+![Quince pantallas de dumbOS](media/preview.png)
+
 ---
 
 ## Qué es esto
