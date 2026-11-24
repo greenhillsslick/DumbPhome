@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dumbOS — vista previa interactiva</title>
+<style>
+  :root {
+    --body: #101510;
+    --body2: #1a211a;
+    --plastic: #232b22;
+    --plastic2: #2d372c;
+    --edge: #3d4a3b;
+    --label: #8aa183;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0a0d0a; }
+  body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cfd8c8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 56px;
+    padding: 24px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    flex-wrap: wrap;
+    overflow-x: hidden;
+  }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+  .device {
+    background: linear-gradient(160deg, var(--plastic2), var(--plastic) 40%, var(--plastic2));
+    border-radius: 40px 40px 52px 52px;
+    padding: 14px 14px 18px;
+    width: 358px;
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,.06),
+      inset 0 -3px 0 rgba(0,0,0,.45),
+      0 30px 60px rgba(0,0,0,.55),
+      0 2px 0 #000;
+    border: 1px solid var(--edge);
+    position: relative;
+    /* --scale is set from JS to the largest factor that keeps the whole phone
+       inside the viewport. Without it a 918px-tall phone is cut off on any
+       laptop or phone browser, which reads as "the screen is blank". */
+    transform: scale(var(--scale, 1));
+    /* Top-left origin keeps the layout maths simple: the element shrinks toward
+       its own top-left corner, so the gap left behind is purely vertical. */
+    transform-origin: top left;
+    flex: 0 0 auto;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 2px 12px 10px;
+  }
+  .brand .name {
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #b8cbb0;
+    font-size: 13px;
+  }
+  .brand .sub { font-size: 9px; letter-spacing: 2px; color: var(--label); }
+
+  .bezel {
+    background: #060906;
+    border-radius: 18px;
+    padding: 12px;
+    border: 1px solid #2a332a;
+    box-shadow: inset 0 0 0 2px #000, inset 0 0 24px rgba(155,255,107,.07);
+  }
+  .screen-wrap {
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    background: #0b1408;
+    box-shadow: 0 0 0 1px #000, 0 0 22px rgba(155,255,107,.10);
+  }
+  /* CRT scanlines + phosphor bloom, disabled by class */
+  .scan::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  .glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 40px rgba(155,255,107,.10);
+    border-radius: 6px;
+  }
+
+  .navpad {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 16px 0 10px;
+  }
+  .soft {
+    width: 74px;
+    height: 30px;
+    border-radius: 15px 15px 8px 8px;
+    background: linear-gradient(180deg, #3a4639, #252d24);
+    border: 1px solid #47543f;
+    box-shadow: 0 3px 0 #0d120d, inset 0 1px 0 rgba(255,255,255,.10);
+    color: #b9c9ae;
+    font: 600 9px/30px ui-monospace, monospace;
+    letter-spacing: 1.4px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .soft.pressed { transform: translateY(2px); box-shadow: 0 1px 0 #0d120d, inset 0 2px 4px rgba(0,0,0,.5); }
+
+  .dpad {
+    width: 92px; height: 62px;
+    position: relative;
+    border-radius: 26px;
+    background: radial-gradient(circle at 50% 40%, #39443a, #1d241c 70%);
+    border: 1px solid #46523f;
+    box-shadow: 0 4px 0 #0c110c, inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .dpad .cell {
+    position: absolute;
+    width: 30px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    color: #93a98a;
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .dpad .up    { top: 2px;  left: 31px; }
+  .dpad .down  { bottom: 2px; left: 31px; }
+  .dpad .left  { left: 4px;  top: 20px; }
+  .dpad .right { right: 4px; top: 20px; }
+  .dpad .ok {
+    top: 20px; left: 31px;
+    background: linear-gradient(180deg, #4a5847, #2c352b);
+    border-radius: 8px;
+    border: 1px solid #55634e;
+    color: #cfe2c4;
+    height: 22px;
+    font-size: 8px;
+    letter-spacing: 1px;
+  }
+  .dpad .pressed { background: #121812; color: #9bff6b; }
+
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    padding: 4px 18px 2px;
+  }
+  .key {
+    height: 34px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #374232, #242c23);
+    border: 1px solid #46533f;
+    box-shadow: 0 3px 0 #0c110c, inset 0 1px 0 rgba(255,255,255,.09);
+    color: #cdddc2;
+    font: 700 13px/1 ui-monospace, monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .key small { font-size: 7px; letter-spacing: 1px; color: #83977a; font-weight: 600; }
+  .key.pressed { transform: translateY(2px); box-shadow: 0 1px 0 #0c110c, inset 0 2px 5px rgba(0,0,0,.55); }
+
+  .side {
+    max-width: 430px;
+    min-width: 280px;
+  }
+  .side h1 {
+    font-size: 30px;
+    letter-spacing: 6px;
+    margin: 0 0 4px;
+    color: #9bff6b;
+    text-shadow: 0 0 18px rgba(155,255,107,.35);
+    font-weight: 700;
+  }
+  .side .tag { color: #7d9176; font-size: 11px; letter-spacing: 2px; margin-bottom: 22px; }
+  .side p { color: #9fb097; font-size: 12.5px; line-height: 1.75; margin: 0 0 14px; }
+  .side .hint {
+    border-left: 2px solid #2f3b2c;
+    padding-left: 12px;
+    color: #7f9377;
+    font-size: 11.5px;
+    line-height: 1.9;
+  }
+  .side .hint b { color: #b8d3a9; font-weight: 600; }
+  .links { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a {
+    color: #9bff6b;
+    border: 1px solid #2d5a20;
+    padding: 7px 12px;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-decoration: none;
+    border-radius: 2px;
+  }
+  .links a:hover { background: #14220f; }
+  @media (max-width: 820px) {
+    body { gap: 16px; padding: 10px; align-items: flex-start; }
+    /* The phone is the point of the page: on a narrow screen it goes first and
+       the explanation moves below it. */
+    .device { order: 1; margin: 0 auto; }
+    .side { order: 2; max-width: 560px; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+<div class="side">
+  <h1>dumbOS</h1>
+  <div class="tag">LAUNCHER + ECOSISTEMA · PREVIA INTERACTIVA</div>
+  <p>
+    Un launcher de Android que devuelve el móvil a un <b>dumbphone</b>: pantalla monocroma,
+    tipografía de píxeles y las apps justas. Todo lo que ves está dibujado píxel a píxel
+    con el mismo motor que usa la app real.
+  </p>
+  <p class="hint">
+    <b>↑ ↓</b> mover · <b>OK</b> abrir · <b>BACK</b> atrás · <b>MENU</b> opciones<br>
+    En <b>Radio FM</b> arrastra el dial con el ratón.<br>
+    En <b>WhatsApp</b> responde y verás el puente.<br>
+    <b>MENU</b> en Inicio → <b>CAMBIAR TEMA</b> para ver las cinco paletas.
+  </p>
+  <div class="links">
+    <a href="https://github.com/greenhillsslick/DumbPhome" target="_blank" rel="noreferrer">GITHUB</a>
+    <a href="README.md">README</a>
+  </div>
+</div>
+
+<div class="device">
+  <div class="brand">
+    <div class="name">DUMBOS</div>
+    <div class="sub">3310 EDITION</div>
+  </div>
+  <div class="bezel">
+    <div class="screen-wrap scan glow">
+      <canvas id="screen" width="900" height="1740"></canvas>
+    </div>
+  </div>
+
+  <div class="navpad">
+    <div class="soft" data-act="BACK">BACK</div>
+    <div class="dpad">
+      <div class="cell up" data-act="UP">▲</div>
+      <div class="cell left" data-act="LEFT">◀</div>
+      <div class="cell ok" data-act="OK">OK</div>
+      <div class="cell right" data-act="RIGHT">▶</div>
+      <div class="cell down" data-act="DOWN">▼</div>
+    </div>
+    <div class="soft" data-act="MENU">MENU</div>
+  </div>
+
+  <div class="keypad">
+    <div class="key" data-key="1">1</div>
+    <div class="key" data-key="2">2<small>ABC</small></div>
+    <div class="key" data-key="3">3<small>DEF</small></div>
+    <div class="key" data-key="4">4<small>GHI</small></div>
+    <div class="key" data-key="5">5<small>JKL</small></div>
+    <div class="key" data-key="6">6<small>MNO</small></div>
+    <div class="key" data-key="7">7<small>PQRS</small></div>
+    <div class="key" data-key="8">8<small>TUV</small></div>
+    <div class="key" data-key="9">9<small>WXYZ</small></div>
+    <div class="key" data-key="*">*<small>BORRAR</small></div>
+    <div class="key" data-key="0">0<small>ESP</small></div>
+    <div class="key" data-key="#">#</div>
+  </div>
+</div>
+
+<script src="pixel-widgets.js"></script>
+<script src="pixel-ui.js"></script>
+<script src="stations.js"></script>
+<script src="audio.js"></script>
+<script src="apps.js"></script>
+<script src="preview.js"></script>
+</body>
+</html>

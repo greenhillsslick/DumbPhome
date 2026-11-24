@@ -1,0 +1,2363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dumbOS — vista previa interactiva</title>
+<style>
+  :root {
+    --body: #101510;
+    --body2: #1a211a;
+    --plastic: #232b22;
+    --plastic2: #2d372c;
+    --edge: #3d4a3b;
+    --label: #8aa183;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0a0d0a; }
+  body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cfd8c8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 56px;
+    padding: 24px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    flex-wrap: wrap;
+    overflow-x: hidden;
+  }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+  .device {
+    background: linear-gradient(160deg, var(--plastic2), var(--plastic) 40%, var(--plastic2));
+    border-radius: 40px 40px 52px 52px;
+    padding: 14px 14px 18px;
+    width: 358px;
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,.06),
+      inset 0 -3px 0 rgba(0,0,0,.45),
+      0 30px 60px rgba(0,0,0,.55),
+      0 2px 0 #000;
+    border: 1px solid var(--edge);
+    position: relative;
+    /* --scale is set from JS to the largest factor that keeps the whole phone
+       inside the viewport. Without it a 918px-tall phone is cut off on any
+       laptop or phone browser, which reads as "the screen is blank". */
+    transform: scale(var(--scale, 1));
+    /* Top-left origin keeps the layout maths simple: the element shrinks toward
+       its own top-left corner, so the gap left behind is purely vertical. */
+    transform-origin: top left;
+    flex: 0 0 auto;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 2px 12px 10px;
+  }
+  .brand .name {
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #b8cbb0;
+    font-size: 13px;
+  }
+  .brand .sub { font-size: 9px; letter-spacing: 2px; color: var(--label); }
+
+  .bezel {
+    background: #060906;
+    border-radius: 18px;
+    padding: 12px;
+    border: 1px solid #2a332a;
+    box-shadow: inset 0 0 0 2px #000, inset 0 0 24px rgba(155,255,107,.07);
+  }
+  .screen-wrap {
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    background: #0b1408;
+    box-shadow: 0 0 0 1px #000, 0 0 22px rgba(155,255,107,.10);
+  }
+  /* CRT scanlines + phosphor bloom, disabled by class */
+  .scan::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  .glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 40px rgba(155,255,107,.10);
+    border-radius: 6px;
+  }
+
+  .navpad {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 16px 0 10px;
+  }
+  .soft {
+    width: 74px;
+    height: 30px;
+    border-radius: 15px 15px 8px 8px;
+    background: linear-gradient(180deg, #3a4639, #252d24);
+    border: 1px solid #47543f;
+    box-shadow: 0 3px 0 #0d120d, inset 0 1px 0 rgba(255,255,255,.10);
+    color: #b9c9ae;
+    font: 600 9px/30px ui-monospace, monospace;
+    letter-spacing: 1.4px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .soft.pressed { transform: translateY(2px); box-shadow: 0 1px 0 #0d120d, inset 0 2px 4px rgba(0,0,0,.5); }
+
+  .dpad {
+    width: 92px; height: 62px;
+    position: relative;
+    border-radius: 26px;
+    background: radial-gradient(circle at 50% 40%, #39443a, #1d241c 70%);
+    border: 1px solid #46523f;
+    box-shadow: 0 4px 0 #0c110c, inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .dpad .cell {
+    position: absolute;
+    width: 30px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    color: #93a98a;
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .dpad .up    { top: 2px;  left: 31px; }
+  .dpad .down  { bottom: 2px; left: 31px; }
+  .dpad .left  { left: 4px;  top: 20px; }
+  .dpad .right { right: 4px; top: 20px; }
+  .dpad .ok {
+    top: 20px; left: 31px;
+    background: linear-gradient(180deg, #4a5847, #2c352b);
+    border-radius: 8px;
+    border: 1px solid #55634e;
+    color: #cfe2c4;
+    height: 22px;
+    font-size: 8px;
+    letter-spacing: 1px;
+  }
+  .dpad .pressed { background: #121812; color: #9bff6b; }
+
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    padding: 4px 18px 2px;
+  }
+  .key {
+    height: 34px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #374232, #242c23);
+    border: 1px solid #46533f;
+    box-shadow: 0 3px 0 #0c110c, inset 0 1px 0 rgba(255,255,255,.09);
+    color: #cdddc2;
+    font: 700 13px/1 ui-monospace, monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .key small { font-size: 7px; letter-spacing: 1px; color: #83977a; font-weight: 600; }
+  .key.pressed { transform: translateY(2px); box-shadow: 0 1px 0 #0c110c, inset 0 2px 5px rgba(0,0,0,.55); }
+
+  .side {
+    max-width: 430px;
+    min-width: 280px;
+  }
+  .side h1 {
+    font-size: 30px;
+    letter-spacing: 6px;
+    margin: 0 0 4px;
+    color: #9bff6b;
+    text-shadow: 0 0 18px rgba(155,255,107,.35);
+    font-weight: 700;
+  }
+  .side .tag { color: #7d9176; font-size: 11px; letter-spacing: 2px; margin-bottom: 22px; }
+  .side p { color: #9fb097; font-size: 12.5px; line-height: 1.75; margin: 0 0 14px; }
+  .side .hint {
+    border-left: 2px solid #2f3b2c;
+    padding-left: 12px;
+    color: #7f9377;
+    font-size: 11.5px;
+    line-height: 1.9;
+  }
+  .side .hint b { color: #b8d3a9; font-weight: 600; }
+  .links { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a {
+    color: #9bff6b;
+    border: 1px solid #2d5a20;
+    padding: 7px 12px;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-decoration: none;
+    border-radius: 2px;
+  }
+  .links a:hover { background: #14220f; }
+  @media (max-width: 820px) {
+    body { gap: 16px; padding: 10px; align-items: flex-start; }
+    /* The phone is the point of the page: on a narrow screen it goes first and
+       the explanation moves below it. */
+    .device { order: 1; margin: 0 auto; }
+    .side { order: 2; max-width: 560px; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+<div class="side">
+  <h1>dumbOS</h1>
+  <div class="tag">LAUNCHER + ECOSISTEMA · PREVIA INTERACTIVA</div>
+  <p>
+    Un launcher de Android que devuelve el móvil a un <b>dumbphone</b>: pantalla monocroma,
+    tipografía de píxeles y las apps justas. Todo lo que ves está dibujado píxel a píxel
+    con el mismo motor que usa la app real.
+  </p>
+  <p class="hint">
+    <b>↑ ↓</b> mover · <b>OK</b> abrir · <b>BACK</b> atrás · <b>MENU</b> opciones<br>
+    En <b>Radio FM</b> arrastra el dial con el ratón.<br>
+    En <b>WhatsApp</b> responde y verás el puente.<br>
+    <b>MENU</b> en Inicio → <b>CAMBIAR TEMA</b> para ver las cinco paletas.
+  </p>
+  <div class="links">
+    <a href="https://github.com/greenhillsslick/DumbPhome" target="_blank" rel="noreferrer">GITHUB</a>
+    <a href="README.md">README</a>
+  </div>
+</div>
+
+<div class="device">
+  <div class="brand">
+    <div class="name">DUMBOS</div>
+    <div class="sub">3310 EDITION</div>
+  </div>
+  <div class="bezel">
+    <div class="screen-wrap scan glow">
+      <canvas id="screen" width="900" height="1740"></canvas>
+    </div>
+  </div>
+
+  <div class="navpad">
+    <div class="soft" data-act="BACK">BACK</div>
+    <div class="dpad">
+      <div class="cell up" data-act="UP">▲</div>
+      <div class="cell left" data-act="LEFT">◀</div>
+      <div class="cell ok" data-act="OK">OK</div>
+      <div class="cell right" data-act="RIGHT">▶</div>
+      <div class="cell down" data-act="DOWN">▼</div>
+    </div>
+    <div class="soft" data-act="MENU">MENU</div>
+  </div>
+
+  <div class="keypad">
+    <div class="key" data-key="1">1</div>
+    <div class="key" data-key="2">2<small>ABC</small></div>
+    <div class="key" data-key="3">3<small>DEF</small></div>
+    <div class="key" data-key="4">4<small>GHI</small></div>
+    <div class="key" data-key="5">5<small>JKL</small></div>
+    <div class="key" data-key="6">6<small>MNO</small></div>
+    <div class="key" data-key="7">7<small>PQRS</small></div>
+    <div class="key" data-key="8">8<small>TUV</small></div>
+    <div class="key" data-key="9">9<small>WXYZ</small></div>
+    <div class="key" data-key="*">*<small>BORRAR</small></div>
+    <div class="key" data-key="0">0<small>ESP</small></div>
+    <div class="key" data-key="#">#</div>
+  </div>
+</div>
+
+<script>
+/* ---- pixel-widgets.js ---- */
+// GENERATED FILE - do not edit by hand.
+// Source of truth: tools/font_data.py, tools/icon_data.py, tools/gen.py
+const BIG_GLYPHS = {
+  '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
+  '"': ['.#.#.', '.#.#.', '.....', '.....', '.....', '.....', '.....'],
+  '#': ['.#.#.', '.#.#.', '#####', '.#.#.', '#####', '.#.#.', '.#.#.'],
+  '$': ['..#..', '.####', '#.#..', '.###.', '..#.#', '####.', '..#..'],
+  '%': ['##..#', '##..#', '...#.', '..#..', '.#...', '#..##', '#..##'],
+  '&': ['.##..', '#..#.', '#.#..', '.#...', '#.#.#', '#..#.', '.##.#'],
+  '\'': ['..#..', '..#..', '.#...', '.....', '.....', '.....', '.....'],
+  '(': ['...#.', '..#..', '.#...', '.#...', '.#...', '..#..', '...#.'],
+  ')': ['.#...', '..#..', '...#.', '...#.', '...#.', '..#..', '.#...'],
+  '*': ['.....', '#.#.#', '.###.', '#####', '.###.', '#.#.#', '.....'],
+  '+': ['.....', '..#..', '..#..', '#####', '..#..', '..#..', '.....'],
+  ',': ['.....', '.....', '.....', '.....', '.##..', '.##..', '.#...'],
+  '-': ['.....', '.....', '.....', '.###.', '.....', '.....', '.....'],
+  '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
+  '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....'],
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  '3': ['#####', '...#.', '..#..', '...#.', '....#', '#...#', '.###.'],
+  '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+  '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  '6': ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+  '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  ':': ['.....', '.##..', '.##..', '.....', '.##..', '.##..', '.....'],
+  ';': ['.....', '.##..', '.##..', '.....', '.##..', '.##..', '.#...'],
+  '<': ['....#', '...#.', '..#..', '.#...', '..#..', '...#.', '....#'],
+  '=': ['.....', '.....', '#####', '.....', '#####', '.....', '.....'],
+  '>': ['#....', '.#...', '..#..', '...#.', '..#..', '.#...', '#....'],
+  '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  '@': ['.###.', '#...#', '#.###', '#.#.#', '#.###', '#....', '.###.'],
+  'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  'C': ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+  'D': ['###..', '#..#.', '#...#', '#...#', '#...#', '#..#.', '###..'],
+  'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  'G': ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
+  'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'I': ['.###.', '..#..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+  'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+  'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  'M': ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
+  'N': ['#...#', '#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#'],
+  'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+  'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  'W': ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+  'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  '[': ['..###', '..#..', '..#..', '..#..', '..#..', '..#..', '..###'],
+  '\\': ['#....', '#....', '.#...', '..#..', '...#.', '....#', '....#'],
+  ']': ['###..', '..#..', '..#..', '..#..', '..#..', '..#..', '###..'],
+  '^': ['..#..', '.#.#.', '#...#', '.....', '.....', '.....', '.....'],
+  '_': ['.....', '.....', '.....', '.....', '.....', '.....', '#####'],
+  '|': ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  '~': ['.....', '.....', '.#..#', '#.#.#', '#..#.', '.....', '.....'],
+};
+
+const SMALL_GLYPHS = {
+  '!': ['.#..', '.#..', '.#..', '.#..', '....', '.#..'],
+  '#': ['.#.#', '####', '.#.#', '####', '.#.#', '....'],
+  '%': ['#..#', '#.#.', '..#.', '.#..', '.#.#', '#..#'],
+  '\'': ['.#..', '.#..', '....', '....', '....', '....'],
+  '(': ['.#..', '#...', '#...', '#...', '#...', '.#..'],
+  ')': ['.#..', '...#', '...#', '...#', '...#', '.#..'],
+  '*': ['....', '#..#', '.##.', '.##.', '#..#', '....'],
+  '+': ['....', '.##.', '####', '.##.', '....', '....'],
+  '-': ['....', '....', '####', '....', '....', '....'],
+  '.': ['....', '....', '....', '....', '.##.', '.##.'],
+  '/': ['...#', '...#', '..#.', '.#..', '#...', '#...'],
+  '0': ['.##.', '#..#', '#..#', '#..#', '#..#', '.##.'],
+  '1': ['.#..', '##..', '.#..', '.#..', '.#..', '####'],
+  '2': ['###.', '...#', '.##.', '#...', '#...', '####'],
+  '3': ['###.', '...#', '.##.', '...#', '...#', '###.'],
+  '4': ['#..#', '#..#', '####', '...#', '...#', '...#'],
+  '5': ['####', '#...', '###.', '...#', '...#', '###.'],
+  '6': ['.##.', '#...', '###.', '#..#', '#..#', '.##.'],
+  '7': ['####', '...#', '..#.', '.#..', '.#..', '.#..'],
+  '8': ['.##.', '#..#', '.##.', '#..#', '#..#', '.##.'],
+  '9': ['.##.', '#..#', '#..#', '.###', '...#', '.##.'],
+  ':': ['....', '.##.', '.##.', '....', '.##.', '.##.'],
+  '<': ['...#', '..#.', '.#..', '.#..', '..#.', '...#'],
+  '=': ['....', '####', '....', '####', '....', '....'],
+  '>': ['#...', '.#..', '..#.', '..#.', '.#..', '#...'],
+  '?': ['.##.', '#..#', '...#', '.##.', '....', '.##.'],
+  'A': ['.##.', '#..#', '#..#', '####', '#..#', '#..#'],
+  'B': ['###.', '#..#', '###.', '#..#', '#..#', '###.'],
+  'C': ['.###', '#...', '#...', '#...', '#...', '.###'],
+  'D': ['###.', '#..#', '#..#', '#..#', '#..#', '###.'],
+  'E': ['####', '#...', '###.', '#...', '#...', '####'],
+  'F': ['####', '#...', '###.', '#...', '#...', '#...'],
+  'G': ['.###', '#...', '#.##', '#..#', '#..#', '.###'],
+  'H': ['#..#', '#..#', '####', '#..#', '#..#', '#..#'],
+  'I': ['###.', '.#..', '.#..', '.#..', '.#..', '###.'],
+  'J': ['..##', '...#', '...#', '#..#', '#..#', '.##.'],
+  'K': ['#..#', '#.#.', '##..', '##..', '#.#.', '#..#'],
+  'L': ['#...', '#...', '#...', '#...', '#...', '####'],
+  'M': ['#..#', '####', '####', '#..#', '#..#', '#..#'],
+  'N': ['#..#', '##.#', '##.#', '#.##', '#.##', '#..#'],
+  'O': ['.##.', '#..#', '#..#', '#..#', '#..#', '.##.'],
+  'P': ['###.', '#..#', '###.', '#...', '#...', '#...'],
+  'Q': ['.##.', '#..#', '#..#', '#..#', '###.', '..##'],
+  'R': ['###.', '#..#', '###.', '#.#.', '#..#', '#..#'],
+  'S': ['.###', '#...', '.##.', '...#', '...#', '###.'],
+  'T': ['####', '.##.', '.##.', '.##.', '.##.', '.##.'],
+  'U': ['#..#', '#..#', '#..#', '#..#', '#..#', '.###'],
+  'V': ['#..#', '#..#', '#..#', '#..#', '.##.', '.##.'],
+  'W': ['#..#', '#..#', '#..#', '####', '####', '#..#'],
+  'X': ['#..#', '.##.', '.##.', '.##.', '.##.', '#..#'],
+  'Y': ['#..#', '#..#', '.##.', '.##.', '.##.', '.##.'],
+  'Z': ['####', '...#', '.##.', '.##.', '#...', '####'],
+  '[': ['.##.', '.#..', '.#..', '.#..', '.#..', '.##.'],
+  ']': ['.##.', '..#.', '..#.', '..#.', '..#.', '.##.'],
+  '_': ['....', '....', '....', '....', '....', '####'],
+  '|': ['.#..', '.#..', '.#..', '.#..', '.#..', '.#..'],
+  'Ñ': ['.##.', '#..#', '####', '#..#', '#..#', '#..#'],
+};
+
+const SYMBOL_GLYPHS = {
+  'ANTENNA': ['..#..', '..##.', '..#..', '.###.', '.#.#.', '#####', '.....'],
+  'ARROW_DOWN': ['..#..', '..#..', '..#..', '..#..', '#####', '.###.', '..#..'],
+  'ARROW_LEFT': ['..#..', '.#...', '#....', '#####', '#....', '.#...', '..#..'],
+  'ARROW_RIGHT': ['..#..', '...#.', '....#', '#####', '....#', '...#.', '..#..'],
+  'ARROW_UP': ['..#..', '.###.', '#####', '..#..', '..#..', '..#..', '..#..'],
+  'BARS': ['#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
+  'BATTERY': ['.....', '#####', '#####', '#####', '#####', '#####', '.....'],
+  'BELL': ['..#..', '.###.', '.###.', '.###.', '#####', '..#..', '####.'],
+  'BULLET': ['.....', '.##..', '.##..', '.....', '.##..', '.##..', '.....'],
+  'CHECK': ['.....', '....#', '...##', '#.##.', '###..', '.#...', '.....'],
+  'CROSS': ['.....', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '.....'],
+  'DOT': ['.....', '.....', '.....', '.##..', '.##..', '.....', '.....'],
+  'ENVELOPE': ['.....', '#####', '#...#', '#.#.#', '##.##', '#...#', '#####'],
+  'GEAR': ['.....', '.#.#.', '.###.', '##.##', '.###.', '.#.#.', '.....'],
+  'GLOBE': ['.###.', '#.#.#', '#####', '#.#.#', '#####', '#.#.#', '.###.'],
+  'HEART': ['.....', '.#.#.', '#####', '#####', '.###.', '..#..', '.....'],
+  'LOCK': ['.###.', '.#.#.', '#####', '#...#', '#...#', '#####', '.....'],
+  'MOON': ['.###.', '##...', '##...', '##...', '##...', '##...', '.###.'],
+  'MUSIC': ['..###', '..#..', '..#..', '..#..', '###..', '###..', '.....'],
+  'PENCIL': ['...##', '..#.#', '..#..', '.#...', '#....', '#....', '.....'],
+  'PHONE': ['.###.', '#...#', '#...#', '#...#', '.#.#.', '..#..', '.#.#.'],
+  'RADIO': ['#...#', '#.#.#', '#.#.#', '#####', '.#.#.', '.##..', '..#..'],
+  'SIGNAL': ['....#', '...#.', '..#..', '.#...', '#....', '.....', '.....'],
+  'SPEAKER': ['..#..', '.###.', '#####', '#####', '#####', '.###.', '..#..'],
+  'STAR': ['..#..', '..#..', '#####', '.###.', '.#.#.', '#...#', '.....'],
+};
+
+const ICON_GLYPHS = {
+  'ALARM': ['................', '..##........##..', '.####......####.', '..############..', '.##..........##.', '##.....#......##', '##.....#......##', '##.....#####..##', '##............##', '.##..........##.', '..############..', '...##......##...', '..##........##..', '................', '................', '................'],
+  'APPS': ['................', '..####...####...', '..####...####...', '..####...####...', '................', '................', '..####...####...', '..####...####...', '..####...####...', '................', '................', '................', '................', '................', '................', '................'],
+  'BROWSER': ['................', '.....######.....', '...##...#..##...', '..#.....#....#..', '.#......#.....#.', '.#......#.....#.', '#...#########.#.', '.#......#.....#.', '.#......#.....#.', '..#.....#....#..', '...##...#..##...', '.....######.....', '................', '................', '................', '................'],
+  'CALC': ['................', '..############..', '..#..........#..', '..#..######..#..', '..#..........#..', '..############..', '..#..#..#...#.#.', '..#..#..#...#.#.', '..#..........#..', '..#..#..#...#.#.', '..#..#..#...#.#.', '..#..........#..', '..#..#..#...#.#.', '..############..', '................', '................'],
+  'CHAT': ['................', '..############..', '..#..........#..', '..#..#####...#..', '..#..........#..', '..#..####....#..', '..#..........#..', '..#..######..#..', '..#..........#..', '..############..', '....##..........', '....##..........', '.....#..........', '................', '................', '................'],
+  'CONTACTS': ['................', '.....######.....', '....##....##....', '....##....##....', '....##....##....', '....##....##....', '.....######.....', '......####......', '...##########...', '..############..', '.##..######..##.', '.##..######..##.', '.##..........##.', '................', '................', '................'],
+  'FLASH': ['................', '.......#####....', '......#####.....', '.....#####......', '....#####.......', '...##########...', '..#########.....', '.....#####......', '....#####.......', '...####.........', '..###...........', '.##.............', '................', '................', '................', '................'],
+  'HELP': ['................', '..############..', '..#..........#..', '..#...####...#..', '..#..##..##..#..', '..#......##..#..', '..#.....##...#..', '..#....##....#..', '..#....##....#..', '..#..........#..', '..#....##....#..', '..#....##....#..', '..############..', '................', '................', '................'],
+  'INFO': ['................', '..############..', '..#....##....#..', '..#..........#..', '..#....##....#..', '..#....##....#..', '..#....##....#..', '..#....##....#..', '..#....##....#..', '..#..........#..', '..#....##....#..', '..#....##....#..', '..#..........#..', '..############..', '................', '................'],
+  'MAIL': ['................', '................', '################', '#..............#', '#.#..........#.#', '#..##......##..#', '#....##..##....#', '#......##......#', '#....##..##....#', '#..............#', '################', '................', '................', '................', '................', '................'],
+  'NOTES': ['................', '..###########...', '..#.........#.#.', '..#.........#.#.', '..###########.#.', '..#.........#.#.', '..#..#####..#.#.', '..#.........#.#.', '..#..#######.#..', '..#.........#...', '..#..####...#...', '..#.........#...', '..#..######.#...', '..#.........#...', '..###########...', '................'],
+  'PHONE': ['................', '................', '..###......###..', '.#####....#####.', '.#####....#####.', '..####....####..', '...###....###...', '....###..###....', '.....######.....', '......####......', '................', '................', '................', '................', '................', '................'],
+  'RADIO': ['................', '...............#', '..............#.', '....#........#..', '....##......#...', '.############...', '.#..........#...', '.#..####....#...', '.#..#..#....#...', '.#..####....#...', '.#..........#...', '.############...', '................', '................', '................', '................'],
+  'SEARCH': ['................', '....######......', '..##......##....', '.#..........#...', '#............#..', '#............#..', '#............#..', '#............#..', '.#..........#...', '..##......##....', '....######.##...', '..........###...', '...........###..', '............###.', '................', '................'],
+  'SETTINGS': ['................', '......####......', '..#..######..#..', '..##########....', '....###..###....', '..####....####..', '#####..##..#####', '#####..##..#####', '..####....####..', '....###..###....', '..##########....', '..#..######..#..', '......####......', '................', '................', '................'],
+  'SMS': ['................', '..############..', '..#..........#..', '..#..#.#.#.#..#.', '..#..........#..', '..#..#.#.#.#..#.', '..#..........#..', '..#..#.#.#....#.', '..#..........#..', '..############..', '....#.....#.....', '....#.....#.....', '.....#...#......', '......###.......', '................', '................'],
+  'SYSTEM': ['................', '..#####..#####..', '..#...#..#...#..', '..#...#..#...#..', '..#####..#####..', '................', '................', '..#####..#####..', '..#...#..#...#..', '..#...#..#...#..', '..#####..#####..', '................', '................', '................', '................', '................'],
+  'TIMER': ['................', '......####......', '.......##.......', '....########....', '..###......###..', '.##...##.....##.', '.##..####....##.', '##....##......##', '##....##......##', '##....####....##', '.##..........##.', '..###......###..', '....########....', '................', '................', '................'],
+  'WHATSAPP': ['................', '..############..', '..#..........#..', '..#.#.....#..#..', '..#.#..#..#..#..', '..#.#.#.#.#..#..', '..#..........#..', '..#..........#..', '..############..', '....##..........', '....##..........', '.....#..........', '................', '................', '................', '................'],
+};
+
+const ACCENT_FOLD = {
+  'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ü':'U','À':'A','È':'E','Ì':'I','Ò':'O','Ù':'U',
+  'Â':'A','Ê':'E','Î':'I','Ô':'O','Û':'U','Ä':'A','Ë':'E','Ï':'I','Ö':'O','Ç':'C','Ñ':'N',
+  'á':'A','é':'E','í':'I','ó':'O','ú':'U','ü':'U','à':'A','è':'E','ì':'I','ò':'O','ù':'U',
+  'ñ':'N','ç':'C','â':'A','ê':'E','î':'I','ô':'O','û':'U','ä':'A','ë':'E','ï':'I','ö':'O'
+};
+
+const SYMBOL_ORDER = ['ARROW_LEFT','ARROW_RIGHT','ARROW_UP','ARROW_DOWN','CHECK','CROSS','DOT',
+  'BULLET','BARS','MUSIC','PHONE','ENVELOPE','PENCIL','GLOBE','BELL','LOCK','STAR','HEART',
+  'ANTENNA','BATTERY','SIGNAL','RADIO','GEAR','SPEAKER','MOON'];
+
+const GLYPH_ALIASES = {
+  LEFT:'\u0001', RIGHT:'\u0002', UP:'\u0003', DOWN:'\u0004', CHECK:'\u0005', CROSS:'\u0006',
+  DOT:'\u0007', BULLET:'\u0008', BARS:'\u0009', MUSIC:'\u000A', PHONE:'\u000B', ENVELOPE:'\u000C',
+  PENCIL:'\u000D', GLOBE:'\u000E', BELL:'\u000F', LOCK:'\u0010', STAR:'\u0011', HEART:'\u0012',
+  ANTENNA:'\u0013', BATTERY:'\u0014', SIGNAL:'\u0015', RADIO:'\u0016', GEAR:'\u0017',
+  SPEAKER:'\u0018', MOON:'\u0019'
+};
+
+function symbolGlyph(ch) {
+  const i = ch.charCodeAt(0) - 1;
+  if (i < 0 || i >= SYMBOL_ORDER.length) return null;
+  return SYMBOL_GLYPHS[SYMBOL_ORDER[i]];
+}
+
+</script>
+<script>
+/* ---- pixel-ui.js ---- */
+// dumbOS pixel UI kit for the browser preview.
+// Mirrors app/src/main/java/com/dumbos/ui (Typo, Sz, PixelList) so what you
+// see here is the same bitmap font, icons and layout logic the APK uses.
+'use strict';
+
+const THEMES = {
+  PHOSPHOR: { id:'PHOSPHOR', name:'FOSFORO VERDE', bg:'#0B1408', ink:'#9BFF6B', dim:'#4E8A38', panel:'#12220B' },
+  AMBER:    { id:'AMBER',    name:'AMBAR NOCTURNO', bg:'#100C02', ink:'#FFC145', dim:'#8A6521', panel:'#1C1403' },
+  ICE:      { id:'ICE',      name:'AZUL HIELO', bg:'#07101A', ink:'#8FD8FF', dim:'#3C6F8E', panel:'#0C1A26' },
+  PAPER:    { id:'PAPER',    name:'PAPEL VERDE', bg:'#C7DDB0', ink:'#16220F', dim:'#6B8157', panel:'#BCD3A4' },
+  MONO:     { id:'MONO',     name:'MONOCROMO', bg:'#000000', ink:'#D8F0D0', dim:'#5A6B55', panel:'#0A0F0A' },
+};
+
+const SZ = {
+  SMALL: { unit: 2, small: true,  adv: 5, gw: 4, gh: 6 },
+  BODY:  { unit: 3, small: false, adv: 6, gw: 5, gh: 7 },
+  TITLE: { unit: 4, small: false, adv: 6, gw: 5, gh: 7 },
+  HUGE:  { unit: 6, small: false, adv: 6, gw: 5, gh: 7 },
+};
+
+const Pixel = {
+  normalize(s) {
+    let out = '';
+    for (const ch of String(s)) {
+      const c = ACCENT_FOLD[ch] || ch;
+      if (c === '\n') out += ' ';
+      else if ("\u2019\u2018\u00B4`".includes(c)) out += "'";
+      else if ("\u201C\u201D".includes(c)) out += '"';
+      else if ("\u2013\u2014".includes(c)) out += '-';
+      else if (c === '\u2026') out += '...';
+      else if (c === '\u00B7') out += '.';
+      else if (c === '\u00BA' || c === '\u00B0') out += 'o';
+      else if (c === '\u20AC') out += 'EUR';
+      else if (c === '\t') out += '  ';
+      else out += c;
+    }
+    return out.toUpperCase();
+  },
+
+  rowsFor(c, small) {
+    const code = c.charCodeAt(0);
+    if (code >= 1 && code <= 30) return symbolGlyph(c);
+    if (c === '\u00D1') return small ? SMALL_GLYPHS['\u00D1'] : null;
+    const map = small ? SMALL_GLYPHS : BIG_GLYPHS;
+    return map[c] || null;
+  },
+
+  measure(ctx, text, size) {
+    const s = Pixel.normalize(text);
+    let units = 0;
+    for (const c of s) units += c === ' ' ? 3 : (Pixel.rowsFor(c, size.small) ? size.adv : size.adv - 1);
+    return Math.max(0, units - 1) * size.unit;
+  },
+
+  lineH(size) { return size.gh * size.unit; },
+
+  draw(ctx, text, x, y, size, color) {
+    const s = Pixel.normalize(text);
+    ctx.fillStyle = color;
+    const u = size.unit;
+    let cx = Math.round(x);
+    for (const c of s) {
+      if (c === ' ') { cx += 3 * u; continue; }
+      const rows = Pixel.rowsFor(c, size.small);
+      if (!rows) { cx += (size.adv - 1) * u; continue; }
+      for (let ry = 0; ry < rows.length; ry++) {
+        const row = rows[ry];
+        for (let rx = 0; rx < row.length; rx++) {
+          if (row[rx] === '#') ctx.fillRect(cx + rx * u, Math.round(y) + ry * u, u, u);
+        }
+      }
+      cx += size.adv * u;
+    }
+    return cx - Math.round(x);
+  },
+
+  drawRight(ctx, text, right, y, size, color) {
+    Pixel.draw(ctx, text, right - Pixel.measure(ctx, text, size), y, size, color);
+  },
+
+  drawCenter(ctx, text, cx, y, size, color) {
+    Pixel.draw(ctx, text, cx - Pixel.measure(ctx, text, size) / 2, y, size, color);
+  },
+
+  drawClipped(ctx, text, x, y, maxW, size, color) {
+    if (Pixel.measure(ctx, text, size) <= maxW) return Pixel.draw(ctx, text, x, y, size, color);
+    let s = Pixel.normalize(text);
+    while (s.length && Pixel.measure(ctx, s + '...', size) > maxW) s = s.slice(0, -1);
+    return Pixel.draw(ctx, s.trimEnd() + '...', x, y, size, color);
+  },
+
+  wrap(ctx, text, maxW, size) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+      if (!para.trim()) { out.push(''); continue; }
+      const words = para.trim().split(' ').filter(Boolean);
+      let line = '';
+      for (const w of words) {
+        const cand = line ? line + ' ' + w : w;
+        if (line && Pixel.measure(ctx, cand, size) > maxW) { out.push(line); line = ''; }
+        if (!line) {
+          let rest = w;
+          while (Pixel.measure(ctx, rest, size) > maxW && rest.length > 1) {
+            let cut = rest.length;
+            while (cut > 1 && Pixel.measure(ctx, rest.slice(0, cut), size) > maxW) cut--;
+            out.push(rest.slice(0, cut));
+            rest = rest.slice(cut);
+          }
+          line = rest;
+        } else {
+          line += ' ' + w;
+        }
+      }
+      if (line) out.push(line);
+    }
+    return out;
+  },
+
+  icon(ctx, name, x, y, px, color) {
+    const rows = ICON_GLYPHS[name] || SYMBOL_GLYPHS[name];
+    if (!rows) return;
+    ctx.fillStyle = color;
+    for (let ry = 0; ry < rows.length; ry++) {
+      const row = rows[ry];
+      for (let rx = 0; rx < row.length; rx++) {
+        if (row[rx] === '#') ctx.fillRect(x + rx * px, y + ry * px, px, px);
+      }
+    }
+  },
+
+  iconSize(px) { return 16 * px; },
+
+  rule(ctx, x1, y, x2, color, dash) {
+    ctx.fillStyle = color;
+    if (!dash) { ctx.fillRect(x1, y, x2 - x1, 1); return; }
+    for (let x = x1; x < x2; x += 4) ctx.fillRect(x, y, 2, 1);
+  },
+
+  frame(ctx, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillRect(x, y + h - 1, w, 1);
+    ctx.fillRect(x, y, 1, h);
+    ctx.fillRect(x + w - 1, y, 1, h);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Layout helpers (CSS px == device independent px in the preview)
+// ---------------------------------------------------------------------------
+const PAD = 6;
+
+function pill(ctx, x, y, w, h, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.restore();
+}
+
+/**
+ * Draws a scrollable/selected list of rows.
+ * opts: { rowH, selected, scroll, theme, draw(ctx, i, selected, rowH, y), count }
+ */
+function drawList(ctx, x, y, w, h, opts) {
+  const { selected, theme, count } = opts;
+  // Optional per-row heights: a settings list mixes section headers (short)
+  // with items (tall), and forcing one height for both is what made the
+  // sections collide with the rows under them.
+  const hOf = opts.heights ? (i) => opts.heights[i] : () => opts.rowH;
+  const topOf = (i) => { let t = 0; for (let k = 0; k < i; k++) t += hOf(k); return t; };
+  const totalH = () => { let t = 0; for (let k = 0; k < count; k++) t += hOf(k); return t; };
+  const scroll = Math.max(0, Math.min(opts.scroll || 0, Math.max(0, totalH() - h)));
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  // Walk the heights once to find the visible window.
+  let acc = 0, first = 0, last = count - 1;
+  for (let i = 0; i < count; i++) {
+    const hh = hOf(i);
+    if (acc + hh <= scroll) { first = i + 1; }
+    acc += hh;
+  }
+  acc = 0;
+  last = count - 1;
+  for (let i = 0; i < count; i++) {
+    acc += hOf(i);
+    if (acc >= scroll + h && last === count - 1) last = i;
+  }
+  first = Math.max(0, first);
+  for (let i = first; i <= last; i++) {
+    if (i < 0 || i >= count) continue;
+    const rh = hOf(i);
+    const ry = y + topOf(i) - scroll;
+    const sel = i === selected;
+    ctx.save();
+    ctx.translate(x, ry);
+    if (sel && opts.noSelectBar && opts.noSelectBar(i)) { /* section header */ }
+    else if (sel) pill(ctx, 0, 0, w, rh, theme.ink);
+    ctx.beginPath(); ctx.rect(3, 0, w - 6, rh); ctx.clip();
+    (opts.draw || opts.render)(ctx, i, sel, rh, ry);
+    ctx.restore();
+  }
+  ctx.restore();
+  return scroll;
+}
+
+function scrollFor(selected, rowH, viewH, count) {
+  return Math.max(0, Math.min(selected * rowH - (viewH - rowH) / 2, Math.max(0, count * rowH - viewH)));
+}
+
+// ---------------------------------------------------------------------------
+// Fake device state (the preview's "OS")
+// ---------------------------------------------------------------------------
+const State = {
+  theme: THEMES.PHOSPHOR,
+  mode: 'SILENCIO',            // SILENCIO | NO MOLESTAR | TODO
+  sound: true,
+  clockOffset: 0,
+  battery: 78,
+  charging: false,
+  screen: 'home',
+  app: null,
+  dialed: '',
+  radioFreq: 88.4,   // CADENA SER: the dial should start on a station
+  radioOn: false,
+  radioSpeaker: true,   // the APK routes FM to the loudspeaker by default
+  radioVol: 0.55,
+  mail: [
+    { from:'BIBLIOTECA', subject:'VENCIMIENTO DE PRESTAMO', body:"EL LIBRO 'EL NOMBRE DE LA ROSA' VENCE EL VIERNES.\nRECUERDA DEVOLVERLO EN RECEPCION.", t:Date.now()-7200000, unread:true },
+    { from:'TALLER SANJUAN', subject:'BICI LISTA', body:'SU BICICLETA ESTA REPARADA. HORARIO 9:00 A 14:00.\nTOTAL: 18 EUR.', t:Date.now()-86400000, unread:false },
+    { from:'RADIO LOCAL 87.9', subject:'PROGRAMA DE MADRUGADA', body:'ESTA NOCHE A LAS 00:00, SESION DE ROCK EN DIRECTO.\nNO HACE FALTA ENTRADA.', t:Date.now()-172800000, unread:false },
+  ],
+  notes: [
+    { title:'COMPRA', body:'PAN\nLECHE\nHUEVOS\nPLATANOS', t:Date.now()-86400000 },
+    { title:'BICI', body:'PINCHARON LAS DOS RUEDAS. EL TALLER ABRE A LAS 9.', t:Date.now()-3600000 },
+    { title:'IDEA', body:'UNA RADIO QUE SOLO SUENE A LAS 7:00 Y DIGA EL TIEMPO.', t:Date.now()-600000 },
+  ],
+  alarms: [
+    { h:6, m:30, label:'TRABAJO', days:[1,2,3,4,5], on:true },
+    { h:9, m:0, label:'SABADO BICI', days:[6], on:true },
+  ],
+  threads: [
+    { name:'MAMA', number:'+34 600 111 222', unread:1, t:Date.now()-720000, msgs:[
+      { me:false, text:'HOLA, HAS COMPRADO PAN?', t:Date.now()-1800000 },
+      { me:true,  text:'SI, Y LECHE. LLEGO A LAS 7', t:Date.now()-1500000 },
+      { me:false, text:'LLEGO A CASA A LAS 20:00, NO TARDES', t:Date.now()-720000 },
+    ]},
+    { name:'HUGO', number:'+34 611 333 444', unread:0, t:Date.now()-5700000, msgs:[
+      { me:false, text:'QUE HACEMOS EL SABADO?', t:Date.now()-7600000 },
+      { me:true,  text:'IR A VER LA BANDA DEL BARRIO', t:Date.now()-7000000 },
+      { me:false, text:'EL CONCIERTO ERA A LAS 9 NO A LAS 8', t:Date.now()-5700000 },
+    ]},
+    { name:'TALLER', number:'+34 622 555 666', unread:0, t:Date.now()-93600000, msgs:[
+      { me:false, text:'SU BICI ESTA LISTA PARA RECOGER', t:Date.now()-93600000 },
+    ]},
+    { name:'89391', number:'89391', unread:0, t:Date.now()-180000000, msgs:[
+      { me:false, text:'INFO: SALDO 4,50 EUR. GRACIAS', t:Date.now()-180000000 },
+    ]},
+  ],
+  wa: [
+    { conv:'MAMA', app:'WHATSAPP', text:'TE HAS DEJADO LAS LLAVES EN CASA', t:Date.now()-300000 },
+    { conv:'MAMA', app:'WHATSAPP', text:'ABREME QUE ESTOY EN LA PUERTA', t:Date.now()-180000 },
+    { conv:'BANDA DEL BARRIO', app:'TELEGRAM', text:'ENSAYO EL JUEVES 19:00', t:Date.now()-7200000 },
+  ],
+  browseStack: [],
+  page: null,
+  contacts: [
+    { name:'MAMA', number:'+34 600 111 222' },
+    { name:'HUGO', number:'+34 611 333 444' },
+    { name:'TALLER SANJUAN', number:'+34 622 555 666' },
+    { name:'BIBLIOTECA', number:'+34 633 777 888' },
+  ],
+};
+
+</script>
+<script>
+/* ---- stations.js ---- */
+// GENERATED by tools/gen_stations.py from tools/stations.json.
+// Do not edit by hand: change the JSON and re-run the generator.
+const STATIONS = [
+  { key: 'SER', name: 'CADENA SER', desc: 'NOTICIAS Y DEPORTE', freq: 88.4, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/CADENASER.mp3' },
+  { key: 'LOS40', name: 'LOS40', desc: 'EXITOS DEL MOMENTO', freq: 90.1, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40.mp3' },
+  { key: 'DIAL', name: 'CADENA DIAL', desc: 'MUSICA EN ESPANOL', freq: 91.9, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/CADENADIAL.mp3' },
+  { key: 'M80', name: 'M80 RADIO', desc: 'CLASICOS DE LOS 80', freq: 93.2, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/M80RADIO.mp3' },
+  { key: 'COPE', name: 'COPE', desc: 'INFORMATIVOS', freq: 94.6, fmt: 'mp3',
+    url: 'https://flucast09-h-cloud.flumotion.com/cope/net1.mp3' },
+  { key: 'RNE5', name: 'RADIO 5', desc: 'TODO NOTICIAS', freq: 96.0, fmt: 'mp3',
+    url: 'https://dispatcher.rndfnk.com/crtve/rne5/mad/mp3/high' },
+  { key: 'ONDACERO', name: 'ONDA CERO', desc: 'ACTUALIDAD', freq: 98.8, fmt: 'aac',
+    url: 'https://radio-atres-live.ondacero.es/api/livestream-redirect/OCAAC.aac' },
+  { key: 'ESRADIO', name: 'ESRADIO', desc: 'LIBERTAD DIGITAL', freq: 100.3, fmt: 'mp3',
+    url: 'https://libertaddigital-radio-live1.flumotion.com/libertaddigital/ld-live1-high.mp3' },
+  { key: 'MARCA', name: 'RADIO MARCA', desc: 'DEPORTES', freq: 101.7, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3' },
+  { key: 'LOS40DANCE', name: 'LOS40 DANCE', desc: 'DANCE Y ELECTRONICA', freq: 103.1, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3' },
+  { key: 'LOS40CLAS', name: 'LOS40 CLASSIC', desc: 'CLASICOS DE LOS 40', freq: 104.6, fmt: 'mp3',
+    url: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3' },
+  { key: 'CANALSUR', name: 'CANAL SUR RADIO', desc: 'ANDALUCIA', freq: 105.9, fmt: 'mp3',
+    url: 'https://rtva-live-radio.flumotion.com/rtva/csr.mp3' },
+  { key: 'RNE', name: 'RADIO NACIONAL', desc: 'RADIO 1', freq: 107.2, fmt: 'mp3',
+    url: 'https://dispatcher.rndfnk.com/crtve/rne1/mad/mp3/high' },
+];
+
+function stationNearest(freq, tol = 0.45) {
+  let best = null, bestD = Infinity;
+  for (const s of STATIONS) {
+    const d = Math.abs(s.freq - freq);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return bestD < tol ? best : null;
+}
+
+</script>
+<script>
+/* ---- audio.js ---- */
+// Radio for the preview.
+//
+// The APK decodes the station streams with MediaCodec; here the browser does it
+// with an <audio> element pointed at the same URL, which is the closest possible
+// twin: same catalogue, same dial, real audio.
+//
+// A stream that will not play is reported rather than faked, exactly like the
+// app's "SIN SEÑAL".
+
+const RadioAudio = (() => {
+  let el = null;          // <audio>
+  let current = null;     // station object or null
+  let vol = 0.7;
+  let wantPlay = false;
+  let lastError = '';
+  let startedAt = 0;
+  let watchdog = 0;
+
+  function ensure() {
+    if (el) return el;
+    el = new Audio();
+    el.preload = 'none';
+    // Deliberately NOT setting crossOrigin: the audio is only ever played, never
+    // read sample by sample, and asking for CORS would make real stations (which
+    // do not send Access-Control-Allow-Origin) fail to load at all.
+    el.volume = vol;
+    el.addEventListener('playing', () => { lastError = ''; startedAt = Date.now(); });
+    el.addEventListener('error', () => {
+      // A network/decode failure is a real "no signal", not an autoplay block.
+      lastError = 'SIN SEÑAL';
+      wantPlay = false;
+    });
+    el.addEventListener('stalled', () => { if (wantPlay) lastError = 'BUFFER'; });
+    el.addEventListener('waiting', () => { if (wantPlay) lastError = 'BUFFER'; });
+    // A stream that simply ends (a dropped connection, a finite file) must not
+    // leave the dial claiming "SONANDO" for ever.
+    el.addEventListener('ended', () => { if (wantPlay) { lastError = 'SIN SEÑAL'; wantPlay = false; } });
+    el.addEventListener('pause', () => { if (wantPlay && el.ended) { lastError = 'SIN SEÑAL'; wantPlay = false; } });
+    el.addEventListener('timeupdate', () => { if (wantPlay && !el.paused) { lastError = ''; startedAt = startedAt || Date.now(); } });
+    // A stream can die silently: <audio> does not always fire 'error' when the
+    // server stops sending. Compare the clock against the wall clock instead.
+    watchdog = setInterval(() => {
+      if (!wantPlay || !el) return;
+      el.__pos = el.currentTime;
+      clearTimeout(el.__t);
+      el.__t = setTimeout(() => {
+        if (wantPlay && el && !el.paused && el.currentTime === el.__pos) {
+          lastError = 'SIN SEÑAL';
+          wantPlay = false;
+          try { el.pause(); } catch (e) {}
+        }
+      }, 6000);
+    }, 4000);
+    return el;
+  }
+
+  function urlOf(station) {
+    return station ? station.url : null;
+  }
+
+  function on(station, volume) {
+    ensure();
+    if (typeof volume === 'number') vol = volume;
+    el.volume = vol;
+    current = station || null;
+    if (!current) { off(); return; }
+    lastError = '';
+    wantPlay = true;
+    el.src = current.url;
+    const attempt = el.play();
+    if (attempt && attempt.catch) {
+      attempt.catch((err) => {
+        // NotAllowedError = the browser blocked autoplay (a real limit: the
+        // preview needs one user gesture). Anything else is a stream problem.
+        const blocked = err && err.name === 'NotAllowedError';
+        lastError = blocked ? 'PULSA OK PARA SONAR' : 'SIN SEÑAL';
+        wantPlay = false;
+      });
+    }
+  }
+
+  function off() {
+    wantPlay = false;
+    if (el) {
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    }
+    current = null;
+    lastError = '';
+  }
+
+  /** Tuning: same station -> keep playing, different -> switch stream. */
+  function setStation(station) {
+    if (!station) {
+      if (wantPlay) { off(); lastError = 'ENTRE EMISORAS'; }
+      else current = null;
+      return;
+    }
+    if (current && current.key === station.key) return;
+    if (wantPlay) on(station, vol);
+    else current = station;
+  }
+
+  function setVolume(v) {
+    vol = v;
+    if (el) el.volume = Math.max(0, Math.min(1, v));
+  }
+
+  function status() {
+    if (lastError) return lastError;
+    if (!wantPlay) return '';
+    if (!startedAt) return 'CONECTANDO';
+    return 'SONANDO';
+  }
+
+  /** True only when audio is genuinely playing. */
+  function isOn() {
+    return !!(wantPlay && el && !el.paused && el.currentTime > 0);
+  }
+
+  /** True when the user asked for sound and nothing failed yet. */
+  function isWanted() { return wantPlay; }
+
+  return { ensure, on, off, setStation, setVolume, status, isOn, isWanted };
+})();
+
+</script>
+<script>
+/* ---- apps.js ---- */
+// dumbOS screens for the browser preview. Each screen mirrors the matching
+// Kotlin activity: same rows, same soft keys, same pixel metrics.
+'use strict';
+
+const D = {
+  // device viewport in CSS px (the phone is 300x580 inside the shell)
+  W: 300,
+  H: 580,
+  headerH: 22,
+  keybarH: 46,
+};
+
+function clock() {
+  const d = new Date(Date.now() + State.clockOffset);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function clockSecs() {
+  const d = new Date(Date.now() + State.clockOffset);
+  return clock() + ':' + String(d.getSeconds()).padStart(2, '0');
+}
+function today() {
+  const d = new Date(Date.now() + State.clockOffset);
+  const days = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'];
+  const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  return days[d.getDay()] + ' ' + String(d.getDate()).padStart(2,'0') + ' ' + months[d.getMonth()];
+}
+function stamp(t) {
+  const d = new Date(t);
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + ' ' +
+    String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function hhmm(t) {
+  const d = new Date(t);
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+// ---------------------------------------------------------------------------
+// Chrome: header + keybar, shared by every screen
+// ---------------------------------------------------------------------------
+function drawChrome(ctx, title, opts = {}) {
+  const th = State.theme;
+  ctx.fillStyle = th.bg;
+  ctx.fillRect(0, 0, D.W, D.H);
+
+  // header
+  pill(ctx, 0, 0, D.W, D.headerH, th.panel);
+  pill(ctx, 0, D.headerH - 1, D.W, 1, th.dim);
+  Pixel.drawClipped(ctx, title, 6, (D.headerH - 12) / 2 + 1, D.W - 78, SZ.SMALL, th.ink);
+  const right = opts.right || clock();
+  Pixel.drawRight(ctx, right, D.W - 40, (D.headerH - 12) / 2 + 1, SZ.SMALL, th.dim);
+  // signal bars
+  const bars = navigator.onLine ? 4 : 0;
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i < bars ? th.ink : th.dim;
+    const bh = (i + 1) * 2;
+    ctx.fillRect(D.W - 26 + i * 5, 17 - bh, 3, bh);
+  }
+
+  // key bar
+  const ky = D.H - D.keybarH;
+  pill(ctx, 0, ky, D.W, D.keybarH, th.panel);
+  pill(ctx, 0, ky, D.W, 1, th.dim);
+  const keys = opts.keys || ['BACK', 'OK', 'MENU'];
+  const w = D.W / keys.length;
+  keys.forEach((label, i) => {
+    if (i > 0) pill(ctx, i * w, ky + 9, 1, D.keybarH - 18, th.dim);
+    Pixel.drawCenter(ctx, label, i * w + w / 2, ky + D.keybarH / 2 - 6, SZ.SMALL, th.ink);
+  });
+}
+
+function body(kind, args, ctx) {
+  ctx = ctx || (typeof View !== 'undefined' ? View.ctx : null);
+  const top = D.headerH;
+  const h = D.H - D.headerH - D.keybarH;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, top, D.W, h); ctx.clip();
+  ctx.translate(0, top);
+  kind(ctx, h);
+  ctx.restore();
+}
+
+function keyBarLabels(labels) { View.keys = labels; }
+
+// ---------------------------------------------------------------------------
+// HOME
+// ---------------------------------------------------------------------------
+const Home = {
+  sel: 0,
+  tiles: [
+    { icon:'PHONE', label:'TELEFONO', badge:'', app:'phone' },
+    { icon:'SMS', label:'MENSAJES', badge:() => `${State.threads.reduce((a,t)=>a+t.unread,0)} SIN LEER`, app:'sms' },
+    { icon:'MAIL', label:'CORREO', badge:() => `${State.mail.filter(m=>m.unread).length} SIN LEER`, app:'mail' },
+    { icon:'NOTES', label:'NOTAS', badge:() => `${State.notes.length} NOTAS`, app:'notes' },
+    { icon:'BROWSER', label:'WEB TEXTO', badge:'', app:'browser' },
+    { icon:'WHATSAPP', label:'WHATSAPP', badge:'PUENTE', app:'whatsapp' },
+    { icon:'RADIO', label:'RADIO FM', badge:() => `FM ${State.radioFreq.toFixed(1)} MHZ`, app:'radio' },
+    { icon:'ALARM', label:'ALARMAS', badge:() => State.alarms.filter(a=>a.on).length ? `PROX ${String(State.alarms[0].h).padStart(2,'0')}:${String(State.alarms[0].m).padStart(2,'0')}` : 'SIN ALARMAS', app:'alarm' },
+  ],
+
+  draw(ctx, h) {
+    const th = State.theme;
+    // big clock (unit chosen like ClockView.onMeasure)
+    const time = clock();
+    const units = Pixel.normalize(time).split('').reduce((a,c)=>a+(c===' '?3:6),0) - 1;
+    // Leave a real margin on both sides: at 0.60 the clock clipped on 360dp.
+    const unit = Math.max(2, Math.floor((D.W * 0.86) / units));
+    const tw = units * unit;
+    Pixel.draw(ctx, time, Math.round((D.W - tw) / 2), 10, { unit, small:false, adv:6, gw:5, gh:7 }, th.ink);
+    const dateY = 10 + 7 * unit + 6;
+    Pixel.drawCenter(ctx, today(), D.W/2, dateY, SZ.SMALL, th.dim);
+    Pixel.rule(ctx, 8, dateY + SZ.SMALL.unit * 6 + 4, D.W - 8, th.dim);
+
+    // telemetry two-liner
+    const ty = 10 + 7 * unit + 6 + SZ.SMALL.unit * 6 + 4 + 8;
+    Pixel.icon(ctx, 'BELL', 6, ty, 2, State.mode === 'TODO' ? th.dim : th.ink);
+    Pixel.draw(ctx, State.mode === 'NO MOLESTAR' ? 'NO MOL.' : State.mode, 6 + 44, ty - 1, SZ.SMALL, th.ink);
+    const a = State.alarms.find(x => x.on);
+    Pixel.drawRight(ctx, 'AL. ' + (a ? `${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')}` : '--:--'), D.W - 6, ty - 1, SZ.SMALL, th.dim);
+    Pixel.icon(ctx, 'ENVELOPE', 6, ty + 18, 2, th.dim);
+    const inbox = State.mail.filter(m=>m.unread).length + State.threads.reduce((x,t)=>x+t.unread,0);
+    Pixel.draw(ctx, inbox > 0 ? `${inbox} PENDIENTES` : 'TODO LEIDO', 6 + 44, ty + 17, SZ.SMALL, th.dim);
+    Pixel.drawRight(ctx, '78%', D.W - 6, ty + 17, SZ.SMALL, th.dim);
+
+    // tiles: the row must fit body + small + air, or the badge overlaps the
+    // next label (this is exactly what the user saw).
+    const listTop = ty + 38;
+    const rowH = SZ.BODY.unit * 7 + SZ.SMALL.unit * 6 + 14;
+    const listH = h - listTop;
+    const scroll = scrollFor(Home.sel, rowH, listH, Home.tiles.length);
+    Home.scroll = drawList(ctx, 0, listTop, D.W, listH, {
+      rowH, selected: Home.sel, scroll, theme: th, count: Home.tiles.length,
+      draw(c, i, sel, rh) {
+        const ink = sel ? th.bg : th.ink;
+        const dim = sel ? th.bg : th.dim;
+        const t = Home.tiles[i];
+        Pixel.icon(c, t.icon, 4, (rh - 32) / 2, 2, ink);
+        // Centre the two-line block in the real row height.
+        const lineH = SZ.BODY.unit * 7, smallH = SZ.SMALL.unit * 6;
+        const top = Math.round((rh - (lineH + 3 + smallH)) / 2);
+        Pixel.draw(c, t.label, 40, top, SZ.BODY, ink);
+        const b = typeof t.badge === 'function' ? t.badge() : t.badge;
+        Pixel.drawClipped(c, b, 40, top + lineH + 3, D.W - 50, SZ.SMALL, dim);
+        if (sel) { Pixel.drawRight(c, 'OK', D.W - 8, rh / 2 - smallH / 2, SZ.SMALL, ink); }
+      }
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHONE
+// ---------------------------------------------------------------------------
+const Phone = {
+  view: 'contacts', sel: 0, dialed: '',
+
+  draw(ctx, h) {
+    const th = State.theme;
+    if (Phone.view === 'keypad') return Phone.keypad(ctx, h);
+    const smallH = SZ.SMALL.unit * 6, bodyH = SZ.BODY.unit * 7;
+    const head = 'CONTACTOS ' + State.contacts.length;
+    Pixel.draw(ctx, head, 6, 4, SZ.SMALL, th.dim);
+    Pixel.rule(ctx, 0, smallH + 6, D.W, th.dim);
+    const listTop = smallH + 8;
+    const rowH = bodyH + smallH + 14;
+    const listH = h - listTop;
+    const scroll = scrollFor(Phone.sel, rowH, listH, State.contacts.length);
+    drawList(ctx, 0, listTop, D.W, listH, {
+      rowH, selected: Phone.sel, scroll, theme: th, count: State.contacts.length,
+      draw(c, i, sel, rh) {
+        const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+        const ct = State.contacts[i];
+        const top = Math.round((rh - (bodyH + 2 + smallH)) / 2);
+        Pixel.drawClipped(c, ct.name, 6, top, D.W - 12, SZ.BODY, ink);
+        Pixel.drawClipped(c, ct.number, 6, top + bodyH + 2, D.W - 12, SZ.SMALL, dim);
+      }
+    });
+  },
+
+  keypad(ctx, h) {
+    const th = State.theme;
+    const titleH = SZ.TITLE.unit * 7;
+    Pixel.draw(ctx, Phone.dialed || 'MARCA UN NUMERO', 8, 4, SZ.TITLE, Phone.dialed ? th.ink : th.dim);
+    const gy = 4 + titleH + 8;
+    const g = { x: 6, y: gy, w: D.W - 12, h: h - gy - 4 };
+    const cw = g.w / 3, ch = g.h / 4;
+    KEYPAD.forEach((k, i) => {
+      const x = g.x + (i % 3) * cw + 2, y = g.y + Math.floor(i / 3) * ch + 2;
+      const kw = cw - 4, kh = ch - 4;
+      pill(ctx, x, y, kw, kh, th.panel);
+      Pixel.frame(ctx, x, y, kw, kh, th.dim);
+      if (k[1]) {
+        const bh = SZ.BODY.unit * 7, sh = SZ.SMALL.unit * 6;
+        const blockTop = Math.round(y + kh / 2 - (bh + 2 + sh) / 2);
+        Pixel.drawCenter(ctx, k[0], x + kw / 2, blockTop, SZ.BODY, th.ink);
+        Pixel.drawCenter(ctx, k[1], x + kw / 2, blockTop + bh + 2, SZ.SMALL, th.dim);
+      } else {
+        Pixel.drawCenter(ctx, k[0], x + kw / 2, Math.round(y + kh / 2 - SZ.TITLE.unit * 7 / 2), SZ.TITLE, th.ink);
+      }
+    });
+  },
+};
+const KEYPAD = [['1',''],['2','ABC'],['3','DEF'],['4','GHI'],['5','JKL'],['6','MNO'],['7','PQRS'],['8','TUV'],['9','WXYZ'],['*','+'],['0','ESP'],['#','']];
+
+// ---------------------------------------------------------------------------
+// MESSAGES
+// ---------------------------------------------------------------------------
+const Msgs = {
+  view: 'threads', sel: 0, thread: null, page: 0,
+
+  draw(ctx, h) {
+    const th = State.theme;
+    if (Msgs.view === 'threads') {
+      Pixel.draw(ctx, 'CONVERSACIONES ' + State.threads.length, 6, 5, SZ.SMALL, th.dim);
+      Pixel.rule(ctx, 0, 22, D.W, th.dim);
+      const rowH = 44, listH = h - 24;
+      const scroll = scrollFor(Msgs.sel, rowH, listH, State.threads.length);
+      drawList(ctx, 0, 24, D.W, listH, {
+        rowH, selected: Msgs.sel, scroll, theme: th, count: State.threads.length,
+        draw(c, i, sel, rh) {
+          const t = State.threads[i];
+          const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+          // One centred two-line block: name+time on top, preview below.
+          const lineH = SZ.BODY.unit * 7, smallH = SZ.SMALL.unit * 6;
+          const top = Math.round((rh - (lineH + 3 + smallH)) / 2);
+          Pixel.icon(c, 'SMS', 3, (rh - 32) / 2, 2, t.unread ? ink : dim);
+          const tm = hhmm(t.t);
+          const tw = Pixel.measure(c, tm, SZ.SMALL);
+          Pixel.drawClipped(c, t.name, 40, top, D.W - 52 - tw, SZ.BODY, ink);
+          if (t.unread) Pixel.drawRight(c, String(t.unread), D.W - 6, top, SZ.SMALL, ink);
+          Pixel.drawRight(c, tm, D.W - 6, top + lineH + 3, SZ.SMALL, dim);
+          const last = t.msgs[t.msgs.length - 1].text;
+          Pixel.drawClipped(c, last, 40, top + lineH + 3, D.W - 56 - tw, SZ.SMALL, dim);
+        }
+      });
+      return;
+    }
+    // conversation: bubbles stack from the bottom like a real phone
+    const t = Msgs.thread;
+    const per = 3;
+    const pages = Math.max(1, Math.ceil(t.msgs.length / per));
+    Msgs.page = Math.min(Msgs.page, pages - 1);
+    const slice = t.msgs.slice(Msgs.page * per, Msgs.page * per + per);
+    // Everything is derived from the real font metrics: padding + n lines +
+    // one stamp line. Hard-coding 12/22 put the timestamp on top of the text.
+    const sLine = SZ.SMALL.unit * 6;
+    const PAD = 5, GAP = 4;
+    const bubbles = [];
+    let total = 0;
+    for (const m of slice) {
+      const lines = Pixel.wrap(ctx, m.text || '', D.W - 44, SZ.SMALL).slice(0, 3);
+      const wText = Math.min(D.W - 16, Math.max(...lines.map(l => Pixel.measure(ctx, l, SZ.SMALL))) + 16);
+      const bh = PAD + lines.length * (sLine + 1) + GAP + sLine + PAD;
+      bubbles.push({ m, lines, bh, bw: Math.max(120, wText) });
+      total += bh + 8;
+    }
+    let y = Math.max(6, h - 16 - total);
+    for (const b of bubbles) {
+      const left = b.m.me ? Math.max(4, D.W - b.bw - 6) : 4;
+      pill(ctx, left, y, b.bw, b.bh, th.panel);
+      Pixel.frame(ctx, left, y, b.bw, b.bh, b.m.me ? th.ink : th.dim);
+      let ty = y + PAD;
+      for (const line of b.lines) { Pixel.draw(ctx, line, left + 7, ty, SZ.SMALL, th.ink); ty += sLine + 1; }
+      const stampTxt = isFinite(b.m.t) ? hhmm(b.m.t) : '';
+      // Stamp lives in its own reserved line, right-aligned, never over text.
+      const stampY = ty + GAP - 2;
+      Pixel.draw(ctx, stampTxt, b.m.me ? left + b.bw - 6 - Pixel.measure(ctx, stampTxt, SZ.SMALL) : left + 7, stampY, SZ.SMALL, th.dim);
+      y += b.bh + 8;
+    }
+    // page dots
+    for (let i = 0; i < pages; i++) {
+      const on = i === Msgs.page;
+      pill(ctx, D.W / 2 - pages * 5 + i * 10, h - 11, on ? 6 : 4, on ? 4 : 2, on ? th.ink : th.dim);
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
+// SETTINGS
+// ---------------------------------------------------------------------------
+const Settings = {
+  sel: 0,
+  items: () => ([
+    { section:'SONIDO' },
+    { label:'AVISOS', value: () => State.mode, act:'mode' },
+    { label:'TIMBRE', value: () => State.sound ? 'SI' : 'NO', act:'sound' },
+    { label:'NO MOLESTAR', value: () => State.mode === 'NO MOLESTAR' ? 'ACTIVO' : 'INACTIVO', act:'dnd' },
+    { section:'PANTALLA' },
+    { label:'TEMA / COLOR', value: () => State.theme.name, act:'theme' },
+    { label:'TEXTO GRANDE', value: () => 'NO', act:'noop' },
+    { label:'FONDO', value: () => 'MONOCROMO', act:'noop' },
+    { section:'DUMBOS' },
+    { label:'ACCESO AVISOS', value: () => 'PENDIENTE', act:'noop' },
+    { label:'PERMISOS', value: () => 'CONCEDIDOS', act:'noop' },
+    { label:'ALARMAS EXACTAS', value: () => 'OK', act:'noop' },
+    { label:'SER LAUNCHER', value: () => 'SI', act:'noop' },
+    { section:'ESTADO' },
+    { label:'BATERIA', value: () => '78%', act:'noop' },
+    { label:'ALARMAS ACTIVAS', value: () => String(State.alarms.filter(a=>a.on).length), act:'alarms' },
+    { label:'MENSAJES SIN LEER', value: () => String(State.threads.reduce((x,t)=>x+t.unread,0)), act:'sms' },
+    { label:'ACERCA DE DUMBOS', value: () => '1.0.6', act:'about' },
+  ]),
+
+  draw(ctx, h) {
+    const th = State.theme;
+    const items = Settings.items();
+    // Rows are sized from the fonts; a section is a short row of its own
+    // instead of sharing the row height and bleeding into the next item.
+    const rowH = SZ.BODY.unit * 7 + 16;
+    const secH = SZ.SMALL.unit * 6 + 8;
+    const heights = items.map(it => it.section ? secH : rowH);
+    const scroll = scrollFor(Settings.sel, rowH, h, items.length);
+    drawList(ctx, 0, 0, D.W, h, {
+      heights, rowH, selected: Settings.sel, scroll, theme: th, count: items.length,
+      noSelectBar: (i) => !!items[i].section,
+      draw(c, i, sel) {
+        const it = items[i];
+        const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+        if (it.section) {
+          Pixel.draw(c, it.section, 6, Math.round((secH - SZ.SMALL.unit * 6) / 2), SZ.SMALL, dim);
+          Pixel.rule(c, 40, Math.round(secH / 2), D.W - 8, sel ? th.bg : th.dim, true);
+        } else {
+          let val = typeof it.value === 'function' ? it.value() : it.value;
+          if (val === 'CONCEDIDOS') val = 'OK';
+          if (val === 'PENDIENTE') val = 'NO';
+          if (val === 'INACTIVO') val = 'OFF';
+          if (val === 'ACTIVO') val = 'ON';
+          if (val === 'FOSFORO VERDE') val = 'FOSFORO';
+          if (val === 'MONOCROMO') val = 'MONO';
+          // Long values steal the room the label needs; shrink the value to a
+          // short form instead of truncating the thing being configured.
+          const SHORT = { 'SILENCIO':'SIL', 'NO MOLESTAR':'NMD', 'FOSFORO':'FOS' };
+          if (Pixel.measure(c, val, SZ.SMALL) > D.W * 0.28 && SHORT[val]) val = SHORT[val];
+          const vw = Pixel.measure(c, val, SZ.SMALL);
+          const bodyH = SZ.BODY.unit * 7;
+          // Label and value share one baseline, both vertically centred.
+          const top = Math.round((rowH - bodyH) / 2);
+          Pixel.drawClipped(c, it.label, 6, top, D.W - 22 - vw, SZ.BODY, ink);
+          Pixel.draw(c, val, D.W - 8 - vw, top + bodyH - SZ.SMALL.unit * 6, SZ.SMALL, dim);
+        }
+      }
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// MAIL
+// ---------------------------------------------------------------------------
+const MailApp = {
+  view: 'inbox', sel: 0, msg: null,
+  draw(ctx, h) {
+    const th = State.theme;
+    if (MailApp.view === 'inbox') {
+      const smallH = SZ.SMALL.unit * 6;
+      Pixel.draw(ctx, 'BUZON LOCAL - SIN CUENTA', 6, 4, SZ.SMALL, th.dim);
+      Pixel.rule(ctx, 0, smallH + 6, D.W, th.dim);
+      const hdr = smallH + 8;
+      // Rows come from the fonts: from + subject must each own a line.
+      const rowH = SZ.BODY.unit * 7 + smallH + 14, listH = h - hdr;
+      const scroll = scrollFor(MailApp.sel, rowH, listH, State.mail.length);
+      drawList(ctx, 0, hdr, D.W, listH, {
+        rowH, selected: MailApp.sel, scroll, theme: th, count: State.mail.length,
+        draw(c, i, sel, rh) {
+          const m = State.mail[i];
+          const ink = sel ? th.bg : (m.unread ? th.ink : th.dim), dim = sel ? th.bg : th.dim;
+          const lineH = SZ.BODY.unit * 7;   // smallH comes from the inbox header
+          const top = Math.round((rh - (lineH + 3 + smallH)) / 2);
+          if (m.unread) Pixel.icon(c, 'DOT', 2, Math.round((rh - 12) / 2), 2, ink);
+          const tm = hhmm(m.t);
+          Pixel.drawClipped(c, m.from, 12, top, D.W - 14 - Pixel.measure(c, tm, SZ.SMALL), SZ.BODY, ink);
+          Pixel.drawRight(c, tm, D.W - 6, top, SZ.SMALL, dim);
+          Pixel.drawClipped(c, m.subject, 12, top + lineH + 3, D.W - 20, SZ.SMALL, dim);
+        }
+      });
+      return;
+    }
+    const m = MailApp.msg;
+    const smallH = SZ.SMALL.unit * 6;
+    let hy = 4;
+    Pixel.draw(ctx, 'DE ' + m.from, 6, hy, SZ.SMALL, th.dim); hy += smallH + 2;
+    Pixel.draw(ctx, stamp(m.t), 6, hy, SZ.SMALL, th.dim); hy += smallH + 6;
+    Pixel.drawClipped(ctx, m.subject, 6, hy, D.W - 12, SZ.BODY, th.ink); hy += SZ.BODY.unit * 7 + 8;
+    Pixel.rule(ctx, 0, hy, D.W, th.dim);
+    let y = hy + 8;
+    for (const line of Pixel.wrap(ctx, m.body, D.W - 12, SZ.SMALL)) {
+      Pixel.draw(ctx, line, 6, y, SZ.SMALL, th.ink);
+      y += smallH + 1;
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
+// NOTES
+// ---------------------------------------------------------------------------
+const NotesApp = {
+  view: 'list', sel: 0, note: null,
+  draw(ctx, h) {
+    const th = State.theme;
+    if (NotesApp.view === 'list') {
+      Pixel.rule(ctx, 0, 0, D.W, th.dim);
+      const rowH = SZ.BODY.unit * 7 + SZ.SMALL.unit * 6 + 14;
+      const scroll = scrollFor(NotesApp.sel, rowH, h, State.notes.length);
+      drawList(ctx, 0, 0, D.W, h, {
+        rowH, selected: NotesApp.sel, scroll, theme: th, count: State.notes.length,
+        draw(c, i, sel, rh) {
+          const n = State.notes[i];
+          const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+          const lineH = SZ.BODY.unit * 7, smallH = SZ.SMALL.unit * 6;
+          const top = Math.round((rh - (lineH + 3 + smallH)) / 2);
+          const tm = hhmm(n.t);
+          const tw = Pixel.measure(c, tm, SZ.SMALL);
+          Pixel.icon(c, 'PENCIL', 4, Math.round((rh - 32) / 2), 2, dim);
+          // Title and time share the top line; the preview gets its own.
+          Pixel.drawClipped(c, n.title, 40, top, D.W - 52 - tw, SZ.BODY, ink);
+          Pixel.drawRight(c, tm, D.W - 6, top, SZ.SMALL, dim);
+          Pixel.drawClipped(c, n.body.split('\n')[0], 40, top + lineH + 3, D.W - 48, SZ.SMALL, dim);
+        }
+      });
+      return;
+    }
+    const n = NotesApp.note;
+    const smallH = SZ.SMALL.unit * 6, bodyH = SZ.BODY.unit * 7;
+    let y = 4;
+    Pixel.draw(ctx, stamp(n.t), 6, y, SZ.SMALL, th.dim); y += smallH + 3;
+    Pixel.drawClipped(ctx, n.title, 6, y, D.W - 12, SZ.BODY, th.ink); y += bodyH + 4;
+    Pixel.rule(ctx, 0, y, D.W, th.dim);
+    y += 5;
+    for (const line of Pixel.wrap(ctx, n.body, D.W - 12, SZ.SMALL)) {
+      Pixel.draw(ctx, line, 6, y, SZ.SMALL, th.ink);
+      y += smallH + 1;
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
+// BROWSER
+// ---------------------------------------------------------------------------
+const PAGES = {
+  'https://example.com': { title:'EXAMPLE DOMAIN', text:"THIS DOMAIN IS FOR USE IN ILLUSTRATIVE EXAMPLES IN DOCUMENTS.\n\nYOU MAY USE THIS DOMAIN IN LITERATURE WITHOUT PRIOR COORDINATION OR PERMISSION.\n\nEXAMPLE.COM IS A SMALL, FAST PAGE. EXACTLY THE KIND OF PAGE DUMBOS WAS BUILT FOR.", links:[] },
+  'https://lite.cnn.com': { title:'CNN LITE', text:'ULTIMA HORA\n\nEL PARLAMENTO APRUEBA LA LEY DE MOVILIDAD.\n\nEL PARTIDO DE ANOCHE TERMINO 3-2 EN EL ULTIMO MINUTO.\n\nMANANA: VIENTO DEL OESTE, 18 GRADOS.', links:[] },
+  'https://text.npr.org': { title:'NPR TEXT ONLY', text:'NEWS\n\nA TEXT ONLY VIEW OF THE NEWS. NO VIDEO, NO AUTOPLAY, NO POPUPS.\n\nTHE STORY CONTINUES ON PAGE TWO.', links:[] },
+};
+
+const BrowserApp = {
+  view: 'home', sel: 0, url: '', page: null, loading: false,
+  HOME: [
+    'https://example.com',
+    'https://lite.cnn.com',
+    'https://text.npr.org',
+  ],
+  draw(ctx, h) {
+    const th = State.theme;
+    if (BrowserApp.view === 'home') {
+      const smallH = SZ.SMALL.unit * 6;
+      let y = 6;
+      for (const line of Pixel.wrap(ctx, 'WEB DE SOLO TEXTO.\nSIN IMAGENES NI ANUNCIOS.', D.W - 16, SZ.SMALL)) {
+        Pixel.draw(ctx, line, 8, y, SZ.SMALL, th.dim); y += smallH + 2;
+      }
+      Pixel.rule(ctx, 0, y + 3, D.W, th.dim);
+      const listTop = y + 6;
+      const rowH = SZ.BODY.unit * 7 + 12, listH = h - listTop;
+      const scroll = scrollFor(BrowserApp.sel, rowH, listH, BrowserApp.HOME.length);
+      drawList(ctx, 0, listTop, D.W, listH, {
+        rowH, selected: BrowserApp.sel, scroll, theme: th, count: BrowserApp.HOME.length,
+        draw(c, i, sel, rh) {
+          const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+          Pixel.icon(c, 'GLOBE', 4, Math.round((rh - 16) / 2), 1, dim);
+          Pixel.drawClipped(c, (i + 1) + '. ' + PAGES[BrowserApp.HOME[i]].title, 26,
+            Math.round((rh - SZ.BODY.unit * 7) / 2), D.W - 34, SZ.BODY, ink);
+        }
+      });
+      return;
+    }
+    if (BrowserApp.loading) {
+      Pixel.draw(ctx, 'CONECTANDO...', 8, 10, SZ.BODY, th.ink);
+      Pixel.draw(ctx, BrowserApp.url.replace('https://',''), 8, 30, SZ.SMALL, th.dim);
+      pill(ctx, 8, 48, D.W - 16, 1, th.dim);
+      return;
+    }
+    const p = BrowserApp.page;
+    Pixel.drawClipped(ctx, BrowserApp.url, 6, 5, D.W - 12, SZ.SMALL, th.dim);
+    Pixel.rule(ctx, 0, 22, D.W, th.dim);
+    Pixel.drawClipped(ctx, p.title, 6, 27, D.W - 12, SZ.BODY, th.ink);
+    let y = 48;
+    for (const line of Pixel.wrap(ctx, p.text, D.W - 12, SZ.SMALL)) {
+      if (y > h - 14) break;
+      Pixel.draw(ctx, line, 6, y, SZ.SMALL, th.ink);
+      y += 13;
+    }
+  },
+  go(url) {
+    BrowserApp.url = url;
+    BrowserApp.loading = true;
+    BrowserApp.view = 'page';
+    setTimeout(() => {
+      BrowserApp.loading = false;
+      BrowserApp.page = PAGES[url] || { title: url.replace('https://','').toUpperCase(), text:'PAGINA DE DEMOSTRACION.\n\nEN EL TELEFONO, DUMBOS DESCARGA LA PAGINA REAL, QUITA TODAS LAS ETIQUETAS Y MUESTRA SOLO EL TEXTO.', links: [] };
+    }, 420);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// WHATSAPP BRIDGE
+// ---------------------------------------------------------------------------
+const WA = {
+  view: 'list', sel: 0, conv: null,
+  convs() {
+    const map = new Map();
+    for (const m of State.wa) {
+      if (!map.has(m.conv)) map.set(m.conv, []);
+      map.get(m.conv).push(m);
+    }
+    return [...map.entries()].sort((a,b)=>b[1][b[1].length-1].t - a[1][a[1].length-1].t);
+  },
+  draw(ctx, h) {
+    const th = State.theme;
+    const convs = WA.convs();
+    if (WA.view === 'list') {
+      const smallH = SZ.SMALL.unit * 6;
+      Pixel.draw(ctx, 'PUENTE - BUSCAR CON OK', 6, 4, SZ.SMALL, th.dim);
+      Pixel.rule(ctx, 0, smallH + 6, D.W, th.dim);
+      const hdr = smallH + 8;
+      const rowH = SZ.BODY.unit * 7 + smallH + 14, listH = h - hdr;
+      const scroll = scrollFor(WA.sel, rowH, listH, convs.length);
+      drawList(ctx, 0, hdr, D.W, listH, {
+        rowH, selected: WA.sel, scroll, theme: th, count: convs.length,
+        draw(c, i, sel, rh) {
+          const [name, msgs] = convs[i];
+          const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+          const lineH = SZ.BODY.unit * 7;
+          const top = Math.round((rh - (lineH + 3 + smallH)) / 2);
+          const last = msgs[msgs.length - 1];
+          const tm = hhmm(last.t);
+          Pixel.drawClipped(c, name, 6, top, D.W - 14 - Pixel.measure(c, tm, SZ.SMALL), SZ.BODY, ink);
+          Pixel.drawRight(c, tm, D.W - 6, top, SZ.SMALL, dim);
+          Pixel.drawClipped(c, last.text, 6, top + lineH + 3, D.W - 12, SZ.SMALL, dim);
+        }
+      });
+      return;
+    }
+    const msgs = convs.find(c => c[0] === WA.conv)?.[1] || [];
+    Pixel.rule(ctx, 0, 0, D.W, th.dim);
+    const sH = SZ.SMALL.unit * 6;
+    let y = 6;
+    for (const m of msgs) {
+      Pixel.draw(ctx, m.app, 4, y, SZ.SMALL, th.dim);
+      Pixel.drawRight(ctx, hhmm(m.t), D.W - 4, y, SZ.SMALL, th.dim);
+      y += sH + 3;
+      for (const line of Pixel.wrap(ctx, m.text, D.W - 12, SZ.SMALL).slice(0, 2)) {
+        Pixel.draw(ctx, line, 4, y, SZ.SMALL, th.ink);
+        y += sH + 1;
+      }
+      y += 8;
+    }
+    Pixel.rule(ctx, 0, h - sH - 8, D.W, th.dim);
+    Pixel.draw(ctx, '[ ESCRIBE UNA RESPUESTA ]', 6, h - sH - 4, SZ.SMALL, th.dim);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// RADIO FM (the dial)
+// ---------------------------------------------------------------------------
+// The catalogue comes from tools/stations.json via tools/gen_stations.py, so the
+// preview and the APK always agree on frequencies and stream URLs.
+const STATION_PAIRS = STATIONS.map(s => [s.freq, s.name]);
+
+function drawRadio(ctx, h, dragging) {
+  const th = State.theme;
+  const margin = 14;
+  const xOf = f => margin + (D.W - margin * 2) * ((f - 87.5) / (108 - 87.5));
+  const freq = State.radioFreq;
+
+  const txt = freq.toFixed(1);
+  const titleH = SZ.TITLE.unit * 7, smallH = SZ.SMALL.unit * 6;
+  Pixel.drawCenter(ctx, txt, D.W/2, 6, SZ.TITLE, th.ink);
+  Pixel.draw(ctx, 'MHZ', D.W/2 + Pixel.measure(ctx, txt, SZ.TITLE)/2 + 8, 6 + titleH - smallH, SZ.SMALL, th.dim);
+  // Name of whatever the pointer is on: the dial has to say what you tuned.
+  const here = (typeof StationMeta === 'function') ? StationMeta(freq) : null;
+  const nameY = 6 + titleH + 3;
+  Pixel.drawCenter(ctx, here ? here.name : 'SIN EMISORA', D.W/2, nameY, SZ.SMALL, here ? th.ink : th.dim);
+
+  const cy = Math.floor(h * 0.30);
+  pill(ctx, margin, cy - 30, D.W - margin*2, 1, th.dim);
+  pill(ctx, margin, cy + 30, D.W - margin*2, 1, th.dim);
+  for (let f = 87.5; f <= 108.01; f += 0.5) {
+    const x = xOf(f);
+    const whole = Math.abs((f * 10) % 10) < 0.001;
+    const tick = whole ? 7 : 4;
+    ctx.fillStyle = Math.abs(f - freq) < 0.25 ? th.ink : th.dim;
+    // upward from the lower rail, so nothing can collide with the numbers
+    ctx.fillRect(x, cy + 30 - tick, 1, tick);
+    if (whole && Math.floor(f) % 3 === 0) {
+      Pixel.drawCenter(ctx, String(Math.floor(f)), x, cy + 34, SZ.SMALL, th.dim);
+    }
+  }
+  // nearest station lock
+  let near = null, best = 0.45;
+  for (const [f, name] of STATION_PAIRS) { const d = Math.abs(f - freq); if (d < best) { best = d; near = [f, name]; } }
+  const strength = near ? Math.max(0, 1 - best / 0.45) : 0;
+
+  // pointer
+  const px = xOf(freq);
+  pill(ctx, px - 1, cy - 34, 2, 68, th.ink);
+  for (let i = 0; i < 6; i++) pill(ctx, px - i, cy - 38 + i, i*2+1, 1, th.ink);
+
+  // signal bars
+  for (let i = 0; i < 5; i++) {
+    const bh = (i+1) * 3;
+    ctx.fillStyle = strength * 5 > i ? th.ink : th.dim;
+    ctx.fillRect(D.W - 52 + i * 8, cy - 20 - bh, 4, bh);
+  }
+  // static
+  if (strength < 0.98) {
+    let seed = Math.floor(freq * 31);
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let x = margin; x < D.W - margin; x += 4) {
+      const hh = Math.floor(rnd() * (1 - strength) * 12);
+      pill(ctx, x, cy + 52 - hh, 2, hh, th.dim, 0.75);
+    }
+  }
+
+  // station card - every line gets its real font height, so nothing stacks.
+  const bodyH = SZ.BODY.unit * 7;   // smallH already declared above
+  const lines = near ? 4 : 2;
+  const cardH = 14 + bodyH + 4 + (lines - 1) * (smallH + 3);
+  const cardY = Math.max(cy + 70, Math.floor(h * 0.60));
+  pill(ctx, 6, cardY, D.W - 12, cardH, th.panel);
+  Pixel.frame(ctx, 6, cardY, D.W - 12, cardH - 2, near ? th.ink : th.dim);
+  if (near) {
+    let y = cardY + 7;
+    Pixel.drawCenter(ctx, near[1], D.W/2, y, SZ.BODY, th.ink); y += bodyH + 4;
+    Pixel.drawCenter(ctx, near[0].toFixed(1) + ' MHZ', D.W/2, y, SZ.SMALL, th.dim); y += smallH + 3;
+    // Real state from the player, never a decorative label.
+    const audioStatus = (typeof RadioAudio !== 'undefined') ? RadioAudio.status() : '';
+    const live = (typeof RadioAudio !== 'undefined') ? RadioAudio.isWanted() : State.radioOn;
+    const st = audioStatus || (live ? 'CONECTANDO' : 'OK PARA SONAR + ALTAVOZ');
+    Pixel.drawCenter(ctx, st, D.W/2, y, SZ.SMALL, live ? th.ink : th.dim); y += smallH + 3;
+    // Say plainly which radio this is: the browser has no aerial either.
+    Pixel.drawCenter(ctx, 'POR INTERNET', D.W/2, y, SZ.SMALL, th.dim);
+  } else {
+    Pixel.drawCenter(ctx, 'SIN EMISORA', D.W/2, cardY + 10, SZ.BODY, th.dim);
+    Pixel.drawCenter(ctx, 'SINTONIZA', D.W/2, cardY + 12 + bodyH, SZ.SMALL, th.dim);
+  }
+  // hint
+  Pixel.drawCenter(ctx, 'ARRASTRA EL DIAL', D.W/2, h - 12, SZ.SMALL, th.dim);
+}
+
+// ---------------------------------------------------------------------------
+// ALARMS
+// ---------------------------------------------------------------------------
+const AlarmApp = {
+  sel: 0,
+  draw(ctx, h) {
+    const th = State.theme;
+    const smallH = SZ.SMALL.unit * 6, titleH = SZ.TITLE.unit * 7;
+    // Header rows follow the fonts: PROXIMA/TEMPORIZADOR plus the big time,
+    // which is taller than two small lines.
+    const headH = Math.max(smallH * 2 + 10, titleH + 14);
+    pill(ctx, 0, 0, D.W, headH, th.panel);
+    pill(ctx, 0, headH - 1, D.W, 1, th.dim);
+    Pixel.draw(ctx, 'PROXIMA ALARMA', 6, 5, SZ.SMALL, th.dim);
+    Pixel.draw(ctx, 'TEMPORIZADOR', 6, 5 + smallH + 4, SZ.SMALL, th.dim);
+    const a = State.alarms.find(x => x.on);
+    const timeTxt = a ? `${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')}` : '--:--';
+    Pixel.drawRight(ctx, timeTxt, D.W - 6, 4, SZ.TITLE, th.ink);
+    Pixel.drawRight(ctx, '--:--', D.W - 6, 4 + titleH + 4, SZ.BODY, th.dim);
+
+    const rowH = titleH + smallH + 14, listTop = headH + 2, listH = h - listTop;
+    const scroll = scrollFor(AlarmApp.sel, rowH, listH, State.alarms.length);
+    drawList(ctx, 0, listTop, D.W, listH, {
+      rowH, selected: AlarmApp.sel, scroll, theme: th, count: State.alarms.length,
+      draw(c, i, sel, rh) {
+        const al = State.alarms[i];
+        const ink = sel ? th.bg : (al.on ? th.ink : th.dim), dim = sel ? th.bg : th.dim;
+        const top = Math.round((rh - (titleH + 3 + smallH)) / 2);
+        const onTxt = al.on ? 'ON' : 'OFF';
+        Pixel.draw(c, `${String(al.h).padStart(2,'0')}:${String(al.m).padStart(2,'0')}`, 6, top, SZ.TITLE, ink);
+        Pixel.drawRight(c, onTxt, D.W - 6, top + titleH - smallH, SZ.SMALL, dim);
+        Pixel.drawClipped(c, al.label, 6, top + titleH + 3, D.W - 60, SZ.SMALL, dim);
+        const names = ['LU','MA','MI','JU','VI','SA','DO'];
+        Pixel.drawRight(c, al.days.length === 7 ? 'DIARIO' : al.days.map(d=>names[d-1]).join(' '), D.W - 6, top + titleH + 3, SZ.SMALL, dim);
+      }
+    });
+  },
+};
+
+</script>
+<script>
+/* ---- preview.js ---- */
+// dumbOS interactive preview: a 3310-shaped body around the live pixel UI.
+// NOTE: plain scripts sharing the global scope, so the helpers declared in
+// apps.js (drawChrome, body) are visible here.
+
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const View = {
+  ctx,
+  keys: ['BACK', 'OK', 'MENU'],
+  menu: null,       // { title, items, sel, onPick }
+  modal: null,      // 'mode' | 'theme' | 'about' | ...
+  input: null,      // { title, value, numeric, onSubmit }
+  toast: '',
+  dragging: false,
+};
+
+// ---------------------------------------------------------------------------
+// device sizing
+// ---------------------------------------------------------------------------
+/**
+ * Fits the whole phone inside the viewport.
+ *
+ * The shell is ~918px tall. On a laptop (720px) or a phone browser (844px) that
+ * does not fit, and because the screen sits at the bottom of the shell the
+ * visible result is an apparently blank device. Scaling the shell down (CSS
+ * transform, one uniform factor) keeps the canvas crisp: the browser scales the
+ * already-rasterised bitmap instead of re-rasterising at a fractional DPR.
+ */
+function fitDevice() {
+  const device = document.querySelector('.device');
+  if (!device) return;
+  const side = document.querySelector('.side');
+  const portrait = window.innerWidth < 860;
+
+  device.style.setProperty('--scale', '1');
+  device.style.marginBottom = '';
+  device.style.marginTop = '';
+  const natural = device.getBoundingClientRect();
+  const sideH = side ? side.getBoundingClientRect().height : 0;
+
+  const padX = portrait ? 10 : 28;
+  const padY = portrait ? 10 : 24;
+  const sideW = side && !portrait ? side.getBoundingClientRect().width + 40 : 0;
+  const availW = window.innerWidth - padX * 2 - sideW;
+
+  // In portrait the phone shares the column with the text below it, so it may
+  // only take part of the height; a little of the panel peeking in is fine.
+  let availH = window.innerHeight - padY * 2;
+  if (portrait) availH = availH - Math.min(sideH * 0.45, 150);
+
+  let scale = Math.min(availW / natural.width, availH / natural.height, 1.15);
+  scale = Math.max(0.4, scale);
+  scale = Math.round(scale * 100) / 100;
+  device.style.setProperty('--scale', String(scale));
+
+  // The element keeps its untransformed box in layout, so a scaled-down shell
+  // leaves a gap below it. With a top-left origin that gap is exact.
+  device.style.marginBottom = scale === 1
+    ? ''
+    : (-natural.height * (1 - scale)) + 'px';
+}
+
+function resize() {
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  canvas.width = D.W * dpr;
+  canvas.height = D.H * dpr;
+  canvas.style.width = D.W + 'px';
+  canvas.style.height = D.H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  fitDevice();
+  draw();
+}
+
+// ---------------------------------------------------------------------------
+// drawing
+// ---------------------------------------------------------------------------
+function draw() {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+
+  drawChrome(ctx, titleFor(), { keys: View.keys });
+  body(drawApp, null);
+
+  if (View.toast) {
+    const w = Pixel.measure(ctx, View.toast, SZ.SMALL) + 16;
+    pill(ctx, (D.W - w) / 2, D.H - D.keybarH - 26, w, 20, State.theme.panel);
+    Pixel.frame(ctx, (D.W - w) / 2, D.H - D.keybarH - 26, w, 20, State.theme.ink);
+    Pixel.drawCenter(ctx, View.toast, D.W / 2, D.H - D.keybarH - 20, SZ.SMALL, State.theme.ink);
+  }
+
+  if (View.menu) drawMenu();
+  if (View.modal) drawModal();
+  if (View.input) drawInput();
+  ctx.restore();
+}
+
+function titleFor() {
+  switch (State.screen) {
+    case 'home': return 'DUMBOS';
+    case 'phone': return 'TELEFONO';
+    case 'sms': return 'MENSAJES';
+    case 'settings': return 'AJUSTES';
+    case 'mail': return 'CORREO';
+    case 'notes': return 'NOTAS';
+    case 'browser': return 'WEB';
+    case 'whatsapp': return 'WHATSAPP';
+    case 'radio': return 'RADIO FM';
+    case 'alarm': return 'ALARMAS';
+    case 'apps': return 'APPS DEL SISTEMA';
+    default: return 'DUMBOS';
+  }
+}
+
+function drawApp(c, h) {
+  switch (State.screen) {
+    case 'home': return Home.draw(c, h);
+    case 'phone': return Phone.draw(c, h);
+    case 'sms': return Msgs.draw(c, h);
+    case 'settings': return Settings.draw(c, h);
+    case 'mail': return MailApp.draw(c, h);
+    case 'notes': return NotesApp.draw(c, h);
+    case 'browser': return BrowserApp.draw(c, h);
+    case 'whatsapp': return WA.draw(c, h);
+    case 'radio': return drawRadio(c, h);
+    case 'alarm': return AlarmApp.draw(c, h);
+    case 'apps': return drawSystemApps(c, h);
+  }
+}
+
+const SYSTEM_APPS = [
+  { icon:'BROWSER', name:'CHROME', pkg:'com.android.chrome' },
+  { icon:'CHAT', name:'CAMARA', pkg:'com.android.camera' },
+  { icon:'RADIO', name:'CALCULADORA', pkg:'com.android.calculator' },
+  { icon:'FLASH', name:'FOTOS', pkg:'com.google.android.apps.photos' },
+  { icon:'SEARCH', name:'MAPAS', pkg:'com.google.android.apps.maps' },
+  { icon:'SYSTEM', name:'RELOJ', pkg:'com.android.deskclock' },
+];
+let sysSel = 0;
+
+function drawSystemApps(c, h) {
+  const th = State.theme;
+  Pixel.draw(c, 'ESTO SIGUE SIENDO ANDROID.', 6, 5, SZ.SMALL, th.dim);
+  Pixel.rule(c, 0, 22, D.W, th.dim);
+  const rowH = 34;
+  const scroll = scrollFor(sysSel, rowH, h - 24, SYSTEM_APPS.length);
+  drawList(c, 0, 24, D.W, h - 24, {
+    rowH, selected: sysSel, scroll, theme: th, count: SYSTEM_APPS.length,
+    draw(g, i, sel) {
+      const ink = sel ? th.bg : th.ink, dim = sel ? th.bg : th.dim;
+      Pixel.icon(g, SYSTEM_APPS[i].icon, 4, (rowH - 32)/2, 2, dim);
+      Pixel.draw(g, SYSTEM_APPS[i].name, 40, (rowH - 14)/2, SZ.BODY, ink);
+    }
+  });
+}
+
+// menus and dialogs -----------------------------------------------------------
+function menu(title, items, onPick) {
+  View.menu = { title, items, sel: 0, onPick };
+  draw();
+}
+
+function drawMenu() {
+  const th = State.theme;
+  const m = View.menu;
+  ctx.save();
+  pill(ctx, 0, 0, D.W, D.H, '#000', 0.55);
+  // A 3310 menu is wide and each row owns the full body height.
+  const rowH = SZ.BODY.unit * 7 + 12;
+  const headH = SZ.SMALL.unit * 6 + 12;
+  const footH = SZ.SMALL.unit * 6 + 8;
+  const padX = 3;
+  const h = Math.min(m.items.length * rowH + headH + footH, D.H - 90);
+  const y = (D.H - h) / 2;
+  const x = padX, w = D.W - padX * 2;
+  pill(ctx, x, y, w, h, th.bg);
+  Pixel.frame(ctx, x, y, w, h, th.ink);
+  Pixel.draw(ctx, m.title, x + 10, y + 6, SZ.SMALL, th.ink);
+  Pixel.rule(ctx, x, y + headH - 2, D.W - padX, th.dim);
+  const viewH = h - headH - footH;
+  const scroll = scrollFor(m.sel, rowH, viewH, m.items.length);
+  drawList(ctx, x, y + headH, w, viewH, {
+    rowH, selected: m.sel, scroll, theme: th, count: m.items.length,
+    draw(c, i, sel, rh) {
+      const ink = sel ? th.bg : th.ink;
+      // Only draw the running number when the item is not already numbered.
+      const num = /^\d/.test(m.items[i]) ? '' : (i + 1) + ' ';
+      const tw = Pixel.measure(c, num, SZ.BODY);
+      Pixel.drawClipped(c, num + m.items[i], 6, Math.round((rh - SZ.BODY.unit * 7) / 2), w - 16 - tw, SZ.BODY, ink);
+    }
+  });
+  Pixel.drawRight(ctx, 'OK', D.W - padX - 6, y + h - footH + 2, SZ.SMALL, th.dim);
+  ctx.restore();
+}
+
+function drawModal() {
+  const th = State.theme;
+  ctx.save();
+  pill(ctx, 0, 0, D.W, D.H, '#000', 0.6);
+  const m = View.modal;
+  if (m.kind === 'about') {
+    const lines = [
+      'DUMBOS 1.0.6',
+      '',
+      'UN LAUNCHER Y UN ECOSISTEMA',
+      'MONOCROMO PARA ANDROID.',
+      '',
+      'TODO LO QUE HACE FALTA Y NADA',
+      'DE LO QUE NO.',
+      '',
+      'TIPOGRAFIA DE 5X7 PIXELES.',
+      'ICONOS DE 16X16.',
+      '',
+      'ESTA VISTA ES LA PREVIA WEB',
+      'DEL MISMO MOTOR QUE DIBUJA',
+      'LA APP DE ANDROID.',
+    ];
+    const w = D.W - 40, hh = lines.length * 13 + 52;
+    const y = (D.H - hh) / 2;
+    pill(ctx, 20, y, w, hh, th.bg);
+    Pixel.frame(ctx, 20, y, w, hh, th.ink);
+    lines.forEach((l, i) => Pixel.draw(ctx, l, 30, y + 16 + i * 13, SZ.SMALL, i === 0 ? th.ink : th.dim));
+    Pixel.draw(ctx, '[OK] CERRAR', 30, y + hh - 18, SZ.SMALL, th.ink);
+  }
+  ctx.restore();
+}
+
+function drawInput() {
+  const th = State.theme;
+  ctx.save();
+  pill(ctx, 0, 0, D.W, D.H, '#000', 0.6);
+  const i = View.input;
+  const hh = 66;
+  const y = (D.H - hh) / 2;
+  pill(ctx, 16, y, D.W - 32, hh, th.bg);
+  Pixel.frame(ctx, 16, y, D.W - 32, hh, th.ink);
+  Pixel.draw(ctx, i.title, 26, y + 8, SZ.SMALL, th.dim);
+  const cursor = (Math.floor(Date.now() / 500) % 2) ? '_' : '';
+  Pixel.drawClipped(ctx, (i.value || '') + cursor, 26, y + 24, D.W - 52, SZ.BODY, th.ink);
+  Pixel.draw(ctx, '[OK] ENVIAR', 26, y + hh - 16, SZ.SMALL, th.ink);
+  ctx.restore();
+}
+
+function drawRail() {
+  // the rail is the hardware strip under the screen; redrawn by #rail canvas
+}
+
+// ---------------------------------------------------------------------------
+// navigation
+// ---------------------------------------------------------------------------
+function openApp(id) {
+  State.screen = id;
+  View.menu = null;
+  View.input = null;
+  if (id === 'phone') { Phone.view = 'contacts'; Phone.sel = 0; }
+  if (id === 'sms') { Msgs.view = 'threads'; Msgs.sel = 0; }
+  if (id === 'settings') Settings.sel = 0;
+  if (id === 'mail') { MailApp.view = 'inbox'; MailApp.sel = 0; }
+  if (id === 'notes') { NotesApp.view = 'list'; NotesApp.sel = 0; }
+  if (id === 'browser') { BrowserApp.view = 'home'; BrowserApp.sel = 0; }
+  if (id === 'whatsapp') { WA.view = 'list'; WA.sel = 0; }
+  if (id === 'alarm') AlarmApp.sel = 0;
+  updateKeys();
+  draw();
+}
+
+function back() {
+  if (View.input) { View.input = null; updateKeys(); draw(); return; }
+  if (View.menu) { View.menu = null; updateKeys(); draw(); return; }
+  if (View.modal) { View.modal = null; updateKeys(); draw(); return; }
+  switch (State.screen) {
+    case 'home': toast('EL LAUNCHER YA ESTA EN INICIO'); return;
+    case 'phone': if (Phone.view === 'keypad') { Phone.view = 'contacts'; Phone.dialed = ''; } else return goHome(); break;
+    case 'sms': if (Msgs.view === 'thread') { Msgs.view = 'threads'; } else return goHome(); break;
+    case 'mail': if (MailApp.view === 'message') MailApp.view = 'inbox'; else return goHome(); break;
+    case 'notes': if (NotesApp.view === 'note') NotesApp.view = 'list'; else return goHome(); break;
+    case 'browser': if (BrowserApp.view === 'page') { BrowserApp.view = 'home'; } else return goHome(); break;
+    case 'whatsapp': if (WA.view === 'conv') WA.view = 'list'; else return goHome(); break;
+    default: return goHome();
+  }
+  updateKeys();
+  draw();
+}
+
+function goHome() {
+  State.screen = 'home';
+  updateKeys();
+  draw();
+}
+
+function updateKeys() {
+  View.keys = ['BACK', 'OK', 'MENU'];
+  if (State.screen === 'home') View.keys = ['APPS', 'ABRIR', 'MENU'];
+  if (State.screen === 'phone' && Phone.view === 'keypad') View.keys = ['BORRAR', 'LLAMAR', 'OPCIONES'];
+  if (State.screen === 'radio') View.keys = ['ATRAS', State.radioOn ? 'APAGAR' : 'ENCENDER', 'EMISORAS'];
+  if (View.menu) View.keys = ['CERRAR', 'ELEGIR', 'ABAJO'];
+  if (View.input) View.keys = ['CANCELAR', 'ENVIAR', '.'];
+}
+
+function toast(msg) {
+  View.toast = msg;
+  draw();
+  setTimeout(() => { View.toast = ''; draw(); }, 1400);
+}
+
+function ok() {
+  if (View.input) { submitInput(); return; }
+  if (View.menu) {
+    const m = View.menu;
+    const pick = m.onPick;
+    const sel = m.sel;
+    View.menu = null;
+    pick && pick(sel);
+    updateKeys();
+    draw();
+    return;
+  }
+  if (View.modal) { View.modal = null; updateKeys(); draw(); return; }
+  switch (State.screen) {
+    case 'home': openApp(Home.tiles[Home.sel].app); return;
+    case 'apps': openAppFromSystem(); return;
+    case 'phone':
+      if (Phone.view === 'contacts') {
+        const ct = State.contacts[Phone.sel];
+        toast('LLAMANDO A ' + ct.name);
+        return;
+      }
+      if (Phone.dialed) toast('LLAMANDO AL ' + Phone.dialed);
+      else toast('MARCA UN NUMERO');
+      return;
+    case 'sms':
+      if (Msgs.view === 'threads') {
+        const t = State.threads[Msgs.sel];
+        t.unread = 0;
+        Msgs.thread = t;
+        Msgs.view = 'thread';
+        Msgs.page = Math.max(0, Math.ceil(t.msgs.length / 4) - 1);
+      } else {
+        Msgs.page = (Msgs.page + 1) % Math.max(1, Math.ceil(Msgs.thread.msgs.length / 4));
+      }
+      updateKeys(); draw(); return;
+    case 'settings': {
+      const it = Settings.items()[Settings.sel];
+      if (it && !it.section) SettingsAct(it.act);
+      return;
+    }
+    case 'mail':
+      if (MailApp.view === 'inbox') {
+        const m = State.mail[MailApp.sel];
+        m.unread = false;
+        MailApp.msg = m;
+        MailApp.view = 'message';
+      } else MailApp.view = 'inbox';
+      updateKeys(); draw(); return;
+    case 'notes':
+      if (NotesApp.view === 'list') { NotesApp.note = State.notes[NotesApp.sel]; NotesApp.view = 'note'; }
+      else NotesApp.view = 'list';
+      updateKeys(); draw(); return;
+    case 'browser':
+      if (BrowserApp.view === 'home') BrowserApp.go(BrowserApp.HOME[BrowserApp.sel]);
+      else if (BrowserApp.view === 'page' && !BrowserApp.loading) toast('SIN ENLACES EN ESTA PAGINA');
+      return;
+    case 'whatsapp':
+      if (WA.view === 'list') { WA.conv = WA.convs()[WA.sel][0]; WA.view = 'conv'; }
+      else View.input = { title: 'RESPUESTA A ' + WA.conv, value: '', onSubmit: (t) => {
+        if (!t) return;
+        State.wa.push({ conv: WA.conv, app: 'TU', text: t.toUpperCase(), t: Date.now() });
+        toast('ENVIADO POR WHATSAPP');
+      }};
+      updateKeys(); draw(); return;
+    case 'radio': {
+      // The flag follows the audio engine, never the other way round: if a
+      // stream fails, the key must go back to ENCENDER and say so.
+      if (RadioAudio.isWanted()) {
+        RadioAudio.off();
+      } else {
+        const st = StationNear();
+        if (!st) { toast('SIN EMISORA'); }
+        else RadioAudio.on(st, State.radioVol);
+      }
+      State.radioOn = RadioAudio.isWanted();
+      updateKeys(); draw();
+      return;
+    }
+    case 'alarm':
+      State.alarms[AlarmApp.sel].on = !State.alarms[AlarmApp.sel].on;
+      draw(); return;
+  }
+}
+
+function openAppFromSystem() {
+  toast(SYSTEM_APPS[sysSel].name + ' ABRIRIA ANDROID');
+}
+
+function SettingsAct(act) {
+  switch (act) {
+    case 'mode':
+      View.menu = {
+        title: 'NOTIFICACIONES', sel: 0, items: ['SILENCIO - SOLO LLAMADAS', 'NO MOLESTAR - NADA PASA', 'TODO - NORMAL'],
+        onPick(i) { State.mode = ['SILENCIO', 'NO MOLESTAR', 'TODO'][i]; toast(State.mode); }
+      };
+      break;
+    case 'sound':
+      State.sound = !State.sound;
+      toast(State.sound ? 'TIMBRE SI' : 'TIMBRE NO');
+      break;
+    case 'dnd':
+      State.mode = State.mode === 'NO MOLESTAR' ? 'SILENCIO' : 'NO MOLESTAR';
+      toast(State.mode);
+      break;
+    case 'theme':
+      View.menu = {
+        title: 'TEMA', sel: 0, items: Object.values(THEMES).map(t => t.name),
+        onPick(i) { State.theme = Object.values(THEMES)[i]; toast(State.theme.name); }
+      };
+      break;
+    case 'about': View.modal = { kind: 'about' }; break;
+    case 'alarms': openApp('alarm'); return;
+    case 'sms': openApp('sms'); return;
+    default: toast('OK');
+  }
+  updateKeys();
+  draw();
+}
+
+function menuKey() {
+  if (View.input || View.menu || View.modal) { ok(); return; }
+  switch (State.screen) {
+    case 'home':
+      menu('MENU', ['TODAS LAS APPS', 'BUSCAR APP', 'SILENCIO', 'NO MOLESTAR', 'TODO', 'AJUSTES'], (i) => {
+        if (i === 0) openApp('apps');
+        else if (i === 1) View.input = { title: 'BUSCAR APP', value: '', onSubmit: () => toast('BUSCANDO...') };
+        else if (i === 5) openApp('settings');
+        else { State.mode = ['SILENCIO', 'NO MOLESTAR', 'TODO'][i - 2]; toast(State.mode); }
+        updateKeys(); draw();
+      });
+      updateKeys(); draw(); return;
+    case 'phone':
+      if (Phone.view === 'contacts') { Phone.view = 'keypad'; toast('TECLADO'); }
+      else menu('OPCIONES', ['BORRAR TODO', 'GUARDAR CONTACTO'], (i) => {
+        if (i === 0) Phone.dialed = '';
+        else if (Phone.dialed) toast('CONTACTO GUARDADO');
+        draw();
+      });
+      updateKeys(); draw(); return;
+    case 'sms':
+      if (Msgs.view === 'threads') menu('MENSAJES', ['NUEVO MENSAJE', 'BORRAR ESTA', 'ACTUALIZAR'], (i) => {
+        if (i === 1) {
+          const t = State.threads[Msgs.sel];
+          if (t) {
+            State.threads = State.threads.filter(x => x !== t);
+            Msgs.sel = Math.max(0, Msgs.sel - (Msgs.sel >= State.threads.length ? 1 : 0));
+            toast('CONVERSACION BORRADA');
+          }
+        }
+        updateKeys(); draw();
+      });
+      else View.input = { title: 'MENSAJE', value: '', onSubmit: (t) => {
+        if (!t) return;
+        Msgs.thread.msgs.push({ me: true, text: t.toUpperCase(), t: Date.now() });
+        Msgs.thread.t = Date.now();
+        Msgs.page = Math.ceil(Msgs.thread.msgs.length / 4) - 1;
+        toast('ENVIADO');
+      }};
+      updateKeys(); draw(); return;
+    case 'settings':
+      menu('MODO RAPIDO', ['SILENCIO', 'NO MOLESTAR', 'TODO', 'CAMBIAR TEMA'], (i) => {
+        if (i === 3) SettingsAct('theme');
+        else { State.mode = ['SILENCIO', 'NO MOLESTAR', 'TODO'][i]; toast(State.mode); }
+      });
+      updateKeys(); draw(); return;
+    case 'mail':
+      View.input = { title: 'PARA', value: '', onSubmit: (to) => {
+        if (!to) return;
+        View.input = { title: 'ASUNTO', value: '', onSubmit: (sub) => {
+          View.input = { title: 'MENSAJE', value: '', onSubmit: (body) => {
+            toast('SIN APP DE CORREO EN LA PREVIA');
+          }};
+          draw();
+        }};
+        draw();
+      }};
+      updateKeys(); draw(); return;
+    case 'notes':
+      if (NotesApp.view === 'list') View.input = { title: 'TITULO DE NOTA', value: '', onSubmit: (t) => {
+        if (!t) return;
+        State.notes.unshift({ title: t.toUpperCase(), body: '(NUEVA NOTA)', t: Date.now() });
+        toast('NOTA CREADA');
+      }};
+      else menu('NOTA', ['BORRAR', 'VOLVER'], (i) => {
+        if (i === 0) {
+          State.notes = State.notes.filter(n => n !== NotesApp.note);
+          NotesApp.view = 'list';
+        } else NotesApp.view = 'list';
+        updateKeys(); draw();
+      });
+      updateKeys(); draw(); return;
+    case 'browser':
+      View.input = { title: 'URL', value: 'https://', onSubmit: (u) => {
+        if (u) BrowserApp.go(u);
+      }};
+      updateKeys(); draw(); return;
+    case 'whatsapp':
+      menu('PUENTE', ['ABRIR WHATSAPP', 'REFRESCAR', 'BORRAR BUZON'], (i) => {
+        if (i === 0) toast('WHATSAPP NO ESTA EN LA PREVIA');
+        if (i === 2) State.wa = [];
+        draw();
+      });
+      return;
+    case 'radio':
+      menu('RADIO FM', [
+        'EMISORAS',
+        State.radioOn ? 'APAGAR' : 'ENCENDER',
+        'ALTAVOZ ' + (State.radioSpeaker ? 'SI' : 'NO'),
+      ], (i) => {
+        if (i === 0) {
+          menu('EMISORAS', STATIONS.map(s => s.freq.toFixed(1) + ' ' + s.name), (j) => {
+            State.radioFreq = STATIONS[j].freq;
+            RadioAudio.on(StationNear(), State.radioVol);
+            State.radioOn = RadioAudio.isWanted();
+            updateKeys(); draw();
+          });
+          return;
+        }
+        if (i === 1) {
+          if (State.radioOn) { RadioAudio.off(); State.radioOn = false; toast('RADIO APAGADA'); }
+          else { RadioAudio.on(StationNear(), State.radioVol); State.radioOn = RadioAudio.isWanted(); toast('RADIO ENCENDIDA'); }
+        } else {
+          // The browser has no earpiece/speaker routing, but the state is real
+          // in the app and the label has to match what the APK shows.
+          State.radioSpeaker = !State.radioSpeaker;
+          toast(State.radioSpeaker ? 'ALTAVOZ DEL MOVIL' : 'AURICULAR');
+        }
+        updateKeys(); draw();
+      });
+      return;
+    case 'alarm':
+      menu('ALARMAS', [...State.alarms.map(a => `${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')} ${a.label}`), 'BORRAR ESTA'], (i) => {
+        if (i === State.alarms.length) {
+          State.alarms.splice(AlarmApp.sel, 1);
+          AlarmApp.sel = Math.max(0, Math.min(AlarmApp.sel, State.alarms.length - 1));
+          toast(State.alarms.length ? 'ALARMA BORRADA' : 'SIN ALARMAS');
+        } else {
+          const a = State.alarms[i];
+          State.alarms[i] = { ...a, h: (a.h + 1) % 24 };
+          toast('HORA +1');
+        }
+        updateKeys(); draw();
+      });
+      return;
+  }
+}
+
+function submitInput() {
+  const i = View.input;
+  View.input = null;
+  const v = i.value;
+  if (i.onSubmit) i.onSubmit(v);
+  updateKeys();
+  draw();
+}
+
+// ---------------------------------------------------------------------------
+// input handling
+// ---------------------------------------------------------------------------
+const down = (act) => {
+  if (View.input) {
+    const i = View.input;
+    if (act === 'UP' || act === 'DOWN' || act === 'LEFT' || act === 'RIGHT') return;
+    if (act === 'OK') { submitInput(); return; }
+    if (act === 'CLEAR') { i.value = i.value.slice(0, -1); draw(); return; }
+    if (act === 'MENU') { View.input = null; updateKeys(); draw(); return; }
+    return;
+  }
+  if (View.menu) {
+    if (act === 'UP') View.menu.sel = (View.menu.sel - 1 + View.menu.items.length) % View.menu.items.length;
+    if (act === 'DOWN') View.menu.sel = (View.menu.sel + 1) % View.menu.items.length;
+    if (act === 'OK') { ok(); return; }
+    if (act === 'BACK' || act === 'MENU') { View.menu = null; }
+    updateKeys(); draw(); return;
+  }
+  if (View.modal) { View.modal = null; updateKeys(); draw(); return; }
+  switch (act) {
+    case 'UP': move(-1); break;
+    case 'DOWN': move(1); break;
+    case 'OK': ok(); return;
+    case 'BACK': back(); return;
+    case 'MENU': menuKey(); return;
+    default: if (act.startsWith('KEY:')) key(act.slice(4));
+  }
+  draw();
+}
+
+function move(delta) {
+  if (State.screen === 'home') Home.sel = clamp(Home.sel + delta, 0, Home.tiles.length - 1);
+  if (State.screen === 'apps') sysSel = clamp(sysSel + delta, 0, SYSTEM_APPS.length - 1);
+  if (State.screen === 'phone' && Phone.view === 'contacts') Phone.sel = clamp(Phone.sel + delta, 0, State.contacts.length - 1);
+  if (State.screen === 'sms' && Msgs.view === 'threads') Msgs.sel = clamp(Msgs.sel + delta, 0, State.threads.length - 1);
+  if (State.screen === 'settings') Settings.sel = clamp(Settings.sel + delta, 0, Settings.items().length - 1);
+  if (State.screen === 'mail' && MailApp.view === 'inbox') MailApp.sel = clamp(MailApp.sel + delta, 0, State.mail.length - 1);
+  if (State.screen === 'notes' && NotesApp.view === 'list') NotesApp.sel = clamp(NotesApp.sel + delta, 0, State.notes.length - 1);
+  if (State.screen === 'browser' && BrowserApp.view === 'home') BrowserApp.sel = clamp(BrowserApp.sel + delta, 0, BrowserApp.HOME.length - 1);
+  if (State.screen === 'whatsapp' && WA.view === 'list') WA.sel = clamp(WA.sel + delta, 0, WA.convs().length - 1);
+  if (State.screen === 'alarm') AlarmApp.sel = clamp(AlarmApp.sel + delta, 0, State.alarms.length - 1);
+  if (State.screen === 'radio') {
+    State.radioFreq = clamp(Math.round((State.radioFreq + delta * 0.1) * 10) / 10, 87.5, 108);
+    RadioAudio.setStation(StationNear());
+    // Tuning off a station is the same as losing it: silence, and say so.
+    if (!StationNear() && RadioAudio.isWanted()) { RadioAudio.off(); State.radioOn = false; }
+  }
+}
+
+function key(k) {
+  if (State.screen === 'phone' && Phone.view === 'keypad') {
+    if (k === '*') Phone.dialed = Phone.dialed.slice(0, -1);
+    else if (k === '#') Phone.dialed = '';
+    else if (Phone.dialed.length < 20) Phone.dialed += k;
+    draw();
+    return;
+  }
+  if (View.input) {
+    if (k === '*') View.input.value = View.input.value.slice(0, -1);
+    else View.input.value += k;
+    draw();
+    return;
+  }
+}
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+/** Nearest catalogue entry to the dial, or null. */
+function StationNear() {
+  return stationNearest(State.radioFreq);
+}
+
+/** Catalogue record for a frequency, for the station card. */
+function StationMeta(freq) {
+  return stationNearest(freq, 0.45);
+}
+
+// ---------------------------------------------------------------------------
+// wire up the hardware body
+// ---------------------------------------------------------------------------
+function wireRail() {
+  document.querySelectorAll('[data-act]').forEach(el => {
+    const act = el.dataset.act;
+    const fire = (e) => {
+      e.preventDefault();
+      RadioAudio.ensure();
+      el.classList.add('pressed');
+      setTimeout(() => el.classList.remove('pressed'), 90);
+      down(act);
+    };
+    el.addEventListener('mousedown', fire);
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); fire(e); }, { passive: false });
+  });
+  document.querySelectorAll('[data-key]').forEach(el => {
+    const k = el.dataset.key;
+    const fire = (e) => {
+      e.preventDefault();
+      el.classList.add('pressed');
+      setTimeout(() => el.classList.remove('pressed'), 90);
+      key(k);
+    };
+    el.addEventListener('mousedown', fire);
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); fire(e); }, { passive: false });
+  });
+  // keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    const map = { ArrowUp:'UP', ArrowDown:'DOWN', ArrowLeft:'LEFT', ArrowRight:'RIGHT', Enter:'OK', Backspace:'BACK', Escape:'BACK' };
+    if (map[e.key]) { e.preventDefault(); down(map[e.key]); return; }
+    if (e.key === 'm') { down('MENU'); return; }
+    if (/^[0-9*#]$/.test(e.key)) key(e.key);
+  });
+}
+
+// drag the radio dial directly on the screen
+canvas.addEventListener('mousedown', (e) => {
+  if (State.screen !== 'radio') return;
+  View.dragging = true;
+  radioDrag(e);
+});
+canvas.addEventListener('mousemove', (e) => { if (View.dragging) radioDrag(e); });
+window.addEventListener('mouseup', () => { View.dragging = false; });
+canvas.addEventListener('touchstart', (e) => {
+  if (State.screen !== 'radio') return;
+  View.dragging = true;
+  radioDrag(e.touches[0]);
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  if (!View.dragging) return;
+  radioDrag(e.touches[0]);
+  e.preventDefault();
+}, { passive: false });
+window.addEventListener('touchend', () => { View.dragging = false; });
+
+function radioDrag(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (D.W / r.width);
+  const margin = 14;
+  const f = 87.5 + (x - margin) / (D.W - margin * 2) * (108 - 87.5);
+  State.radioFreq = clamp(Math.round(f * 10) / 10, 87.5, 108);
+  RadioAudio.setStation(StationNear());
+  if (!StationNear() && RadioAudio.isWanted()) { RadioAudio.off(); State.radioOn = false; }
+  draw();
+}
+
+// boot
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+down('__boot');
+wireRail();
+resize();
+setInterval(() => {
+  if (View.menu || View.input || View.modal) return;
+  // The radio screen mirrors the audio engine once a second, so a stream that
+  // dies turns the soft key back to ENCENDER without any extra timers.
+  if (State.screen === 'radio' && typeof RadioAudio !== 'undefined') {
+    const wanted = RadioAudio.isWanted();
+    if (wanted !== State.radioOn) { State.radioOn = wanted; updateKeys(); }
+  }
+  draw();
+}, 1000);
+
+</script>
+</body>
+</html>
