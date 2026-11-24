@@ -225,6 +225,38 @@ object Sms {
         return out.takeLast(400)
     }
 
+    /** Content URIs of every inbox message from this number. */
+    private fun idsFrom(ctx: Context, number: String): List<Long> {
+        val ids = ArrayList<Long>()
+        if (!canRead(ctx)) return ids
+        try {
+            ctx.contentResolver.query(
+                Uri.parse("content://sms/inbox"), arrayOf("_id"),
+                "address = ?", arrayOf(number), null
+            )?.use { c -> while (c.moveToNext()) ids.add(c.getLong(0)) }
+        } catch (_: Exception) {}
+        return ids
+    }
+
+    /**
+     * Deletes the messages of one conversation. True only when something was
+     * really deleted: the old "BORRAR DE LA VISTA" only cleared the screen and
+     * left every message in the inbox, which is not deleting.
+     */
+    fun deleteThread(ctx: Context, number: String): Boolean {
+        val ids = idsFrom(ctx, number)
+        if (ids.isEmpty()) return false
+        var deleted = 0
+        for (id in ids) {
+            try {
+                if (ctx.contentResolver.delete(
+                        Uri.parse("content://sms/$id"), null, null) > 0
+                ) deleted++
+            } catch (_: Exception) {}
+        }
+        return deleted > 0
+    }
+
     fun markRead(ctx: Context, number: String) {
         try {
             val values = android.content.ContentValues().apply { put("read", 1) }

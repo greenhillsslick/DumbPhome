@@ -64,17 +64,48 @@ object Dp {
  */
 enum class Sz(val unitDp: Int, val small: Boolean) {
     SMALL(2, true),
-    BODY(2, false),
-    TITLE(3, false),
-    HUGE(4, false);
+    BODY(3, false),
+    TITLE(4, false),
+    HUGE(6, false);
 
     val glyphW: Int get() = if (small) 4 else 5
     val glyphH: Int get() = if (small) 6 else 7
     val adv: Int get() = if (small) 5 else 6
 
-    /** Device pixels per font pixel. */
-    fun unitPx(): Int = Dp.dp(unitDp)
+    /**
+     * Device pixels per font pixel.
+     *
+     * Dp.dp() multiplies by the screen density and the width scale, which can
+     * produce 2.7 px per font pixel: every glyph edge then lands inside a pixel
+     * and Android antialiases it into a smear. Rounding to a whole number keeps
+     * each font pixel exactly N screen pixels, which is the only way a bitmap
+     * font stays sharp. It also makes the type noticeably bigger, which was the
+     * second complaint.
+     */
+    fun unitPx(): Int {
+        // Integer density * integer scale unit -> integer device pixels.
+        val px = (Dp.density() * unitDp * Dp.scale()).roundToInt()
+        return max(1, px)
+    }
     fun lineH(): Int = glyphH * unitPx()
+}
+
+/**
+ * Row heights derived from the fonts instead of hard-coded numbers.
+ *
+ * This is the second half of the overlap bug: the sizes grew to stay sharp, but
+ * every list still used a fixed 40-44dp row, so a two-line row (title + badge,
+ * name + preview) drew its second line on top of the next row's first line.
+ * Asking the font how tall a row needs to be fixes all of them at once.
+ */
+object Rows {
+    /** Two stacked lines: body above, small below, plus a little air. */
+    fun two(body: Sz = Sz.BODY, small: Sz = Sz.SMALL, pad: Int = 8): Int =
+        body.lineH() + small.lineH() + Dp.dp(pad)
+
+    /** A single line with padding: menus, one-line lists. */
+    fun one(size: Sz = Sz.BODY, pad: Int = 10): Int =
+        size.lineH() + Dp.dp(pad)
 }
 
 val PALETTES: List<Theme> = listOf(
@@ -107,7 +138,26 @@ data class Theme(
 }
 
 object Px {
-    val paint = Paint().apply { isAntiAlias = false; typeface = Typeface.MONOSPACE }
+    /**
+     * `filterBitmap` is TRUE by default on every Paint. Point-sampled glyphs
+     * scaled up (the home clock is drawn several times their native size) were
+     * therefore bilinearly interpolated, which is exactly the soft, fuzzy edge
+     * the user described. The font is a bitmap: it must never be filtered.
+     */
+    val paint = Paint().apply {
+        isAntiAlias = false
+        isFilterBitmap = false
+        isDither = false
+        typeface = Typeface.MONOSPACE
+    }
+
+    /** Same guarantee for the big clock, which builds its own Paint. */
+    fun blockPaint(color: Int): Paint = Paint().apply {
+        isAntiAlias = false
+        isFilterBitmap = false
+        isDither = false
+        this.color = color
+    }
     private val glyphs = HashMap<String, Bitmap>()
 
     /**
@@ -389,12 +439,34 @@ interface OsView {
  */
 class PixelList(ctx: Context, val count: Int, val rowH: Int) : View(ctx), OsView {
 
+    /**
+     * Optional per-row heights. A settings screen mixes short section headers
+     * with full items; giving both the same height is what made a header sit on
+     * top of the row below it.
+     */
+    var rowHeights: IntArray? = null
+        set(v) { field = v; requestLayout(); invalidate() }
+
+    private fun h(i: Int): Int = rowHeights?.let { if (i in it.indices) it[i] else rowH } ?: rowH
+
+    /** Sum of the heights before row [i]. */
+    private fun topOf(i: Int): Int {
+        var t = 0
+        val n = min(i, count)
+        for (k in 0 until n) t += h(k)
+        return t
+    }
+
+    private fun totalHeight(): Int = topOf(count)
+
     var theme: Theme = PALETTES[0]
         set(v) { field = v; invalidate() }
 
     var selected: Int = 0
         private set
     var onChoose: ((Int) -> Unit)? = null
+    /** Long press / press-and-hold on a row: "what do you want to do with this?". */
+    var onLongPress: ((Int) -> Unit)? = null
     var onHighlight: ((Int) -> Unit)? = null
     /** Row painter with the list as receiver so rows can read its width. */
     var paintRow: (PixelList.(Canvas, Int, Boolean, Int) -> Unit)? = null
@@ -412,13 +484,14 @@ class PixelList(ctx: Context, val count: Int, val rowH: Int) : View(ctx), OsView
     private var dragging = false
     private var downTime = 0L
 
-    private fun maxScroll(): Int = max(0, count * rowH - height)
+    private fun maxScroll(): Int = max(0, totalHeight() - height)
 
     fun scrollToSelected() {
-        val top = selected * rowH
+        val top = topOf(selected)
+        val rh = h(selected)
         val target = when {
             top < scrollYPos -> top
-            top + rowH > scrollYPos + height -> top + rowH - height
+            top + rh > scrollYPos + height -> top + rh - height
             else -> scrollYPos
         }
         scrollYPos = target.coerceIn(0, maxScroll())
@@ -462,25 +535,35 @@ class PixelList(ctx: Context, val count: Int, val rowH: Int) : View(ctx), OsView
     }
 
     override fun onDraw(canvas: Canvas) {
-        val first = (scrollYPos / rowH).coerceAtLeast(0)
-        val last = min(count - 1, (scrollYPos + height) / rowH + 1)
+        // Visible window from the actual heights.
+        var acc = 0
+        var first = 0
+        while (first < count && acc + h(first) <= scrollYPos) { acc += h(first); first++ }
+        var lastIdx = first
+        var acc2 = acc
+        while (lastIdx < count && acc2 < scrollYPos + height) { acc2 += h(lastIdx); lastIdx++ }
+        val firstVisible = first
+        val last = min(count - 1, lastIdx)
         canvas.save()
         canvas.clipRect(0, 0, width, height)
-        for (i in first..last) {
-            if (i < 0 || i >= count) continue
-            val y = i * rowH - scrollYPos
+        var visTop = 0
+        for (i in 0 until count) {
+            val rh = h(i)
+            if (i < firstVisible || i > last) { visTop += rh; continue }
+            val y = visTop - scrollYPos
+            visTop += rh
             canvas.save()
             canvas.translate(0f, y.toFloat())
             val sel = i == selected
             if (sel && drawSelectionBar) {
                 Px.paint.color = theme.ink
                 Px.paint.alpha = 255
-                canvas.drawRect(0f, 0f, width.toFloat(), rowH.toFloat(), Px.paint)
-                canvas.saveLayerAlpha(0f, 0f, width.toFloat(), rowH.toFloat(), 255)
+                canvas.drawRect(0f, 0f, width.toFloat(), rh.toFloat(), Px.paint)
+                canvas.saveLayerAlpha(0f, 0f, width.toFloat(), rh.toFloat(), 255)
             }
             canvas.save()
-            canvas.clipRect(Dp.dpf(3f), 0f, (width - Dp.dp(3)).toFloat(), rowH.toFloat())
-            paintRow?.invoke(this, canvas, i, sel, rowH)
+            canvas.clipRect(Dp.dpf(3f), 0f, (width - Dp.dp(3)).toFloat(), rh.toFloat())
+            paintRow?.invoke(this, canvas, i, sel, rh)
             canvas.restore()
             if (sel && drawSelectionBar) canvas.restore()
             canvas.restore()
@@ -528,12 +611,15 @@ class PixelList(ctx: Context, val count: Int, val rowH: Int) : View(ctx), OsView
                     if (vy < -Dp.dp(120)) target = ((scrollYPos + rowH) / rowH) * rowH
                     if (vy > Dp.dp(120)) target = (scrollYPos / rowH) * rowH
                     settle(target)
-                } else if (System.currentTimeMillis() - downTime < 600) {
+                } else {
                     val idx = (scrollYPos + e.y.toInt()) / rowH
+                    val held = System.currentTimeMillis() - downTime
                     if (idx in 0 until count) {
                         selected = idx
                         invalidate()
-                        onChoose?.invoke(idx)
+                        // A long hold is how a touch screen asks "delete this?".
+                        if (held >= 600 && onLongPress != null) onLongPress?.invoke(idx)
+                        else if (held < 600) onChoose?.invoke(idx)
                     }
                 }
                 return true
@@ -594,7 +680,15 @@ class KeyBar(ctx: Context) : View(ctx) {
                 canvas.drawRect(r.left.toFloat(), Dp.dpf(9f), r.left.toFloat() + 1f, height - Dp.dpf(9f), Px.paint)
             }
             val cy = height / 2
-            if (k.icon != null) {
+            // Soft keys are the only place where three strings share one row.
+            // Without this clip a long label ("EMISORAS") runs over the divider
+            // and into its neighbour, which is the overlap the user reported.
+            val room = r.width() - Dp.dp(12)
+            val longLabel = k.icon == null && TYPO.measure(k.label, Sz.SMALL) > room
+            if (longLabel) {
+                TYPO.drawClipped(canvas, k.label, r.centerX() - room / 2,
+                    cy - Sz.SMALL.lineH() / 2, room, Sz.SMALL, color)
+            } else if (k.icon != null) {
                 val rows = ICON_GLYPHS[k.icon] ?: SYMBOL_GLYPHS[k.icon]
                 if (rows != null) {
                     val px = max(1, Dp.dp(2))
@@ -622,7 +716,7 @@ class KeyBar(ctx: Context) : View(ctx) {
     }
 }
 
-const val KEYBAR_H = 46
+const val KEYBAR_H = 52
 
 // ---------------------------------------------------------------------------
 // Palette aliases so callers can say Colors.accent

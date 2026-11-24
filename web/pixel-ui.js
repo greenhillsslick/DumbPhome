@@ -13,9 +13,9 @@ const THEMES = {
 
 const SZ = {
   SMALL: { unit: 2, small: true,  adv: 5, gw: 4, gh: 6 },
-  BODY:  { unit: 2, small: false, adv: 6, gw: 5, gh: 7 },
-  TITLE: { unit: 3, small: false, adv: 6, gw: 5, gh: 7 },
-  HUGE:  { unit: 4, small: false, adv: 6, gw: 5, gh: 7 },
+  BODY:  { unit: 3, small: false, adv: 6, gw: 5, gh: 7 },
+  TITLE: { unit: 4, small: false, adv: 6, gw: 5, gh: 7 },
+  HUGE:  { unit: 6, small: false, adv: 6, gw: 5, gh: 7 },
 };
 
 const Pixel = {
@@ -159,21 +159,41 @@ function pill(ctx, x, y, w, h, color, alpha = 1) {
  * opts: { rowH, selected, scroll, theme, draw(ctx, i, selected, rowH, y), count }
  */
 function drawList(ctx, x, y, w, h, opts) {
-  const { rowH, selected, theme, count } = opts;
-  const scroll = Math.max(0, Math.min(opts.scroll || 0, Math.max(0, count * rowH - h)));
+  const { selected, theme, count } = opts;
+  // Optional per-row heights: a settings list mixes section headers (short)
+  // with items (tall), and forcing one height for both is what made the
+  // sections collide with the rows under them.
+  const hOf = opts.heights ? (i) => opts.heights[i] : () => opts.rowH;
+  const topOf = (i) => { let t = 0; for (let k = 0; k < i; k++) t += hOf(k); return t; };
+  const totalH = () => { let t = 0; for (let k = 0; k < count; k++) t += hOf(k); return t; };
+  const scroll = Math.max(0, Math.min(opts.scroll || 0, Math.max(0, totalH() - h)));
   ctx.save();
   ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  const first = Math.floor(scroll / rowH);
-  const last = Math.min(count - 1, Math.floor((scroll + h) / rowH) + 1);
+  // Walk the heights once to find the visible window.
+  let acc = 0, first = 0, last = count - 1;
+  for (let i = 0; i < count; i++) {
+    const hh = hOf(i);
+    if (acc + hh <= scroll) { first = i + 1; }
+    acc += hh;
+  }
+  acc = 0;
+  last = count - 1;
+  for (let i = 0; i < count; i++) {
+    acc += hOf(i);
+    if (acc >= scroll + h && last === count - 1) last = i;
+  }
+  first = Math.max(0, first);
   for (let i = first; i <= last; i++) {
     if (i < 0 || i >= count) continue;
-    const ry = y + i * rowH - scroll;
+    const rh = hOf(i);
+    const ry = y + topOf(i) - scroll;
     const sel = i === selected;
     ctx.save();
     ctx.translate(x, ry);
-    if (sel) pill(ctx, 0, 0, w, rowH, theme.ink);
-    ctx.beginPath(); ctx.rect(3, 0, w - 6, rowH); ctx.clip();
-    (opts.draw || opts.render)(ctx, i, sel, rowH, ry);
+    if (sel && opts.noSelectBar && opts.noSelectBar(i)) { /* section header */ }
+    else if (sel) pill(ctx, 0, 0, w, rh, theme.ink);
+    ctx.beginPath(); ctx.rect(3, 0, w - 6, rh); ctx.clip();
+    (opts.draw || opts.render)(ctx, i, sel, rh, ry);
     ctx.restore();
   }
   ctx.restore();
@@ -199,6 +219,7 @@ const State = {
   dialed: '',
   radioFreq: 88.4,   // CADENA SER: the dial should start on a station
   radioOn: false,
+  radioSpeaker: true,   // the APK routes FM to the loudspeaker by default
   radioVol: 0.55,
   mail: [
     { from:'BIBLIOTECA', subject:'VENCIMIENTO DE PRESTAMO', body:"EL LIBRO 'EL NOMBRE DE LA ROSA' VENCE EL VIERNES.\nRECUERDA DEVOLVERLO EN RECEPCION.", t:Date.now()-7200000, unread:true },

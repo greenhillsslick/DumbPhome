@@ -255,7 +255,7 @@ class RadioActivity : OsActivity() {
         stateText = "CONECTANDO"
         refreshInfo()
 
-        val p = StreamPlayer(object : StreamPlayer.Listener {
+        val p = StreamPlayer(applicationContext, object : StreamPlayer.Listener {
             override fun onPlaying(meta: StreamPlayer.StreamMeta) {
                 handler.post {
                     buffering = false
@@ -316,6 +316,7 @@ class RadioActivity : OsActivity() {
         val offset = (if (needGrant) 1 else 0) + (if (hasTuner) 1 else 0)
         Stations.ALL.forEach { list.add(String.format("%.1f", it.freq) + " " + it.name) }
         list.add("VOLUMEN")
+        list.add("ALTAVOZ " + if (Speaker.isOn(this)) "SI" else "NO")
         showMenu("EMISORAS", list) { i ->
             when {
                 needGrant && i == 0 -> {
@@ -331,6 +332,7 @@ class RadioActivity : OsActivity() {
                     setFreq(station.freq)
                     startPlayback(station)
                 }
+                i == offset + Stations.ALL.size + 1 -> toggleSpeaker()
                 i == offset + Stations.ALL.size -> {
                     showMenu("VOLUMEN", listOf("BAJO", "MEDIO", "ALTO", "SILENCIO")) { v ->
                         volume = listOf(0.3f, 0.6f, 1f, 0f)[v]
@@ -344,6 +346,23 @@ class RadioActivity : OsActivity() {
                 else -> toast("DUMBOS NO GUARDA NADA EN LA NUBE")
             }
         }
+    }
+
+    /**
+     * The 3310 had one speaker and no headphone idea at all, so the radio is
+     * meant to fill the room. This reports what the phone actually did: if the
+     * ROM refuses, the toast says so rather than pretending the switch moved.
+     */
+    private fun toggleSpeaker() {
+        if (Speaker.isOn(this)) {
+            Speaker.off(this)
+            toast("SALIDA NORMAL")
+        } else {
+            val ok = Speaker.on(this)
+            toast(if (ok) "ALTAVOZ DEL TELEFONO" else "EL TELEFONO NO DEJA CAMBIAR")
+        }
+        // Reapply to the live stream: preferredDevice is per AudioTrack.
+        refreshInfo()
     }
 
     override fun onPause() {

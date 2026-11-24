@@ -171,23 +171,31 @@ function drawMenu() {
   const m = View.menu;
   ctx.save();
   pill(ctx, 0, 0, D.W, D.H, '#000', 0.55);
-  const rowH = 30;
-  const h = Math.min(m.items.length * rowH + 34, D.H - 120);
+  // A 3310 menu is wide and each row owns the full body height.
+  const rowH = SZ.BODY.unit * 7 + 12;
+  const headH = SZ.SMALL.unit * 6 + 12;
+  const footH = SZ.SMALL.unit * 6 + 8;
+  const padX = 3;
+  const h = Math.min(m.items.length * rowH + headH + footH, D.H - 90);
   const y = (D.H - h) / 2;
-  pill(ctx, 12, y, D.W - 24, h, th.bg);
-  Pixel.frame(ctx, 12, y, D.W - 24, h, th.ink);
-  Pixel.draw(ctx, m.title, 22, y + 8, SZ.SMALL, th.ink);
-  Pixel.rule(ctx, 12, y + 24, D.W - 12, th.dim);
-  const viewH = h - 34;
+  const x = padX, w = D.W - padX * 2;
+  pill(ctx, x, y, w, h, th.bg);
+  Pixel.frame(ctx, x, y, w, h, th.ink);
+  Pixel.draw(ctx, m.title, x + 10, y + 6, SZ.SMALL, th.ink);
+  Pixel.rule(ctx, x, y + headH - 2, D.W - padX, th.dim);
+  const viewH = h - headH - footH;
   const scroll = scrollFor(m.sel, rowH, viewH, m.items.length);
-  drawList(ctx, 12, y + 26, D.W - 24, viewH, {
+  drawList(ctx, x, y + headH, w, viewH, {
     rowH, selected: m.sel, scroll, theme: th, count: m.items.length,
-    draw(c, i, sel) {
+    draw(c, i, sel, rh) {
       const ink = sel ? th.bg : th.ink;
-      Pixel.drawClipped(c, (i + 1) + ' ' + m.items[i], 6, 4, D.W - 60, SZ.BODY, ink);
+      // Only draw the running number when the item is not already numbered.
+      const num = /^\d/.test(m.items[i]) ? '' : (i + 1) + ' ';
+      const tw = Pixel.measure(c, num, SZ.BODY);
+      Pixel.drawClipped(c, num + m.items[i], 6, Math.round((rh - SZ.BODY.unit * 7) / 2), w - 16 - tw, SZ.BODY, ink);
     }
   });
-  Pixel.drawRight(ctx, 'OK', D.W - 22, y + h - 14, SZ.SMALL, th.dim);
+  Pixel.drawRight(ctx, 'OK', D.W - padX - 6, y + h - footH + 2, SZ.SMALL, th.dim);
   ctx.restore();
 }
 
@@ -198,7 +206,7 @@ function drawModal() {
   const m = View.modal;
   if (m.kind === 'about') {
     const lines = [
-      'DUMBOS 0.1.0',
+      'DUMBOS 1.0.6',
       '',
       'UN LAUNCHER Y UN ECOSISTEMA',
       'MONOCROMO PARA ANDROID.',
@@ -432,7 +440,7 @@ function menuKey() {
         else { State.mode = ['SILENCIO', 'NO MOLESTAR', 'TODO'][i - 2]; toast(State.mode); }
         updateKeys(); draw();
       });
-      return;
+      updateKeys(); draw(); return;
     case 'phone':
       if (Phone.view === 'contacts') { Phone.view = 'keypad'; toast('TECLADO'); }
       else menu('OPCIONES', ['BORRAR TODO', 'GUARDAR CONTACTO'], (i) => {
@@ -442,7 +450,17 @@ function menuKey() {
       });
       updateKeys(); draw(); return;
     case 'sms':
-      if (Msgs.view === 'threads') menu('MENSAJES', ['NUEVO MENSAJE', 'ACTUALIZAR'], () => draw());
+      if (Msgs.view === 'threads') menu('MENSAJES', ['NUEVO MENSAJE', 'BORRAR ESTA', 'ACTUALIZAR'], (i) => {
+        if (i === 1) {
+          const t = State.threads[Msgs.sel];
+          if (t) {
+            State.threads = State.threads.filter(x => x !== t);
+            Msgs.sel = Math.max(0, Msgs.sel - (Msgs.sel >= State.threads.length ? 1 : 0));
+            toast('CONVERSACION BORRADA');
+          }
+        }
+        updateKeys(); draw();
+      });
       else View.input = { title: 'MENSAJE', value: '', onSubmit: (t) => {
         if (!t) return;
         Msgs.thread.msgs.push({ me: true, text: t.toUpperCase(), t: Date.now() });
@@ -456,7 +474,7 @@ function menuKey() {
         if (i === 3) SettingsAct('theme');
         else { State.mode = ['SILENCIO', 'NO MOLESTAR', 'TODO'][i]; toast(State.mode); }
       });
-      return;
+      updateKeys(); draw(); return;
     case 'mail':
       View.input = { title: 'PARA', value: '', onSubmit: (to) => {
         if (!to) return;
@@ -496,19 +514,44 @@ function menuKey() {
       });
       return;
     case 'radio':
-      menu('EMISORAS', STATIONS.map(s => s.freq.toFixed(1) + ' ' + s.name), (i) => {
-        State.radioFreq = STATIONS[i].freq;
-        RadioAudio.on(StationNear(), State.radioVol);
-        State.radioOn = RadioAudio.isWanted();
+      menu('RADIO FM', [
+        'EMISORAS',
+        State.radioOn ? 'APAGAR' : 'ENCENDER',
+        'ALTAVOZ ' + (State.radioSpeaker ? 'SI' : 'NO'),
+      ], (i) => {
+        if (i === 0) {
+          menu('EMISORAS', STATIONS.map(s => s.freq.toFixed(1) + ' ' + s.name), (j) => {
+            State.radioFreq = STATIONS[j].freq;
+            RadioAudio.on(StationNear(), State.radioVol);
+            State.radioOn = RadioAudio.isWanted();
+            updateKeys(); draw();
+          });
+          return;
+        }
+        if (i === 1) {
+          if (State.radioOn) { RadioAudio.off(); State.radioOn = false; toast('RADIO APAGADA'); }
+          else { RadioAudio.on(StationNear(), State.radioVol); State.radioOn = RadioAudio.isWanted(); toast('RADIO ENCENDIDA'); }
+        } else {
+          // The browser has no earpiece/speaker routing, but the state is real
+          // in the app and the label has to match what the APK shows.
+          State.radioSpeaker = !State.radioSpeaker;
+          toast(State.radioSpeaker ? 'ALTAVOZ DEL MOVIL' : 'AURICULAR');
+        }
         updateKeys(); draw();
       });
       return;
     case 'alarm':
-      menu('ALARMAS', State.alarms.map(a => `${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')} ${a.label}`), (i) => {
-        const a = State.alarms[i];
-        State.alarms[i] = { ...a, h: (a.h + 1) % 24 };
-        toast('HORA +1');
-        draw();
+      menu('ALARMAS', [...State.alarms.map(a => `${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')} ${a.label}`), 'BORRAR ESTA'], (i) => {
+        if (i === State.alarms.length) {
+          State.alarms.splice(AlarmApp.sel, 1);
+          AlarmApp.sel = Math.max(0, Math.min(AlarmApp.sel, State.alarms.length - 1));
+          toast(State.alarms.length ? 'ALARMA BORRADA' : 'SIN ALARMAS');
+        } else {
+          const a = State.alarms[i];
+          State.alarms[i] = { ...a, h: (a.h + 1) % 24 };
+          toast('HORA +1');
+        }
+        updateKeys(); draw();
       });
       return;
   }

@@ -50,6 +50,7 @@ class PhoneActivity : OsActivity() {
     private var callActive = false
     private var callSeconds = 0
     private var inCallUi: InCallView? = null
+    private var callListener: ((List<android.telecom.Call>) -> Unit)? = null
     private var filter = ""
 
     override fun buildLayout() {
@@ -100,14 +101,18 @@ class PhoneActivity : OsActivity() {
             }
             return
         }
-        val l = PixelList(this, shown.size, Dp.dp(30))
+        // Two lines need Rows.two(), not one: the old single-height row cut the
+        // number off the bottom of each contact.
+        val l = PixelList(this, shown.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val c = shown[i]
             val ink = if (sel) theme.selInk else theme.ink
             val dimColor = if (sel) theme.selInk else theme.dim
-            TYPO.drawClipped(canvas, c.name, Dp.dp(6), Dp.dp(4), width - Dp.dp(12), Sz.BODY, ink)
-            TYPO.drawClipped(canvas, c.number, Dp.dp(6), Dp.dp(4) + Sz.BODY.lineH(), width - Dp.dp(12), Sz.SMALL, dimColor)
+            val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+            val top = ((rowH - block) / 2).coerceAtLeast(0)
+            TYPO.drawClipped(canvas, c.name, Dp.dp(6), top, width - Dp.dp(12), Sz.BODY, ink)
+            TYPO.drawClipped(canvas, c.number, Dp.dp(6), top + Sz.BODY.lineH() + Dp.dp(2), width - Dp.dp(12), Sz.SMALL, dimColor)
         }
         l.onChoose = { i -> call(shown[i].number) }
         list = l
@@ -152,31 +157,97 @@ class PhoneActivity : OsActivity() {
         }
     }
 
+    /**
+     * Places a call without leaving dumbOS.
+     *
+     * ACTION_CALL was wrong here: on many ROMs it hands the call to the OEM
+     * dialer and the user ends up looking at a different phone app, which is
+     * exactly what was reported. TelecomManager.placeCall() starts the call
+     * through the system and leaves the current screen alone; dumbOS keeps its
+     * own in-call view. When dumbOS is the default dialer it also becomes the
+     * call UI (DumbInCallService), so the system does not draw one over it.
+     */
     private fun call(number: String) {
         callTarget = number
         callSeconds = 0
+        val placed = placeCall(number)
+        if (!placed) {
+            // No telephony, no SIM, or no permission: say it, do not open someone
+            // else's dialer and pretend something happened.
+            toast(if (!hasCallPermission()) "SIN PERMISO PARA LLAMAR" else "NO SE PUDO LLAMAR")
+            if (!hasCallPermission()) requestCallPermission()
+            return
+        }
+        callActive = true
         showCallScreen(number)
-        val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    private fun hasCallPermission(): Boolean =
+        checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestCallPermission() {
         try {
-            startActivity(intent)
-            callActive = true
-        } catch (_: SecurityException) {
-            startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number))))
+            requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), 41)
         } catch (_: Exception) {}
+    }
+
+    private fun placeCall(number: String): Boolean {
+        val uri = Uri.parse("tel:" + Uri.encode(number))
+        // Preferred: the Telecom API, which does not launch another activity.
+        try {
+            val tm = getSystemService(TELECOM_SERVICE) as? android.telecom.TelecomManager
+            if (tm != null) {
+                tm.placeCall(uri, Bundle().apply {
+                    putBoolean(android.telecom.TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
+                })
+                return true
+            }
+        } catch (_: SecurityException) {
+            return false
+        } catch (_: Exception) {
+            // fall through to the intent path
+        }
+        // Fallback: ACTION_CALL still places the call; on some ROMs it also
+        // brings up their dialer, but at least the call exists.
+        return try {
+            startActivity(Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun showCallScreen(number: String) {
         screen = Screen.CALL
         clearContent()
-        setKeys("COLGAR", "ALTAVOZ")
+        setKeys("ALTAVOZ", "COLGAR")
         titleText = "LLAMADA"
         val v = InCallView(this, number, Contacts.nameFor(this, number)).also { it.theme = theme }
         inCallUi = v
         content.addView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         keyTarget = object : com.dumbos.ui.OsView {
+            // OK answers a ringing call, or toggles the speaker mid-call.
+            // It must never hang up: that is BACK.
             override fun moveSel(delta: Int) = false
-            override fun activate(): Boolean { endCall(); return true }
-            override fun goBack(): Boolean { endCall(); return true }
+            override fun activate(): Boolean {
+                val call = DumbInCallService.activeCall()
+                if (call?.state == android.telecom.Call.STATE_RINGING) {
+                    DumbInCallService.answer()
+                    toast("DESCOLGADO")
+                } else {
+                    toggleCallSpeaker()
+                }
+                return true
+            }
+            override fun goBack(): Boolean {
+                val call = DumbInCallService.activeCall()
+                if (call != null) {
+                    DumbInCallService.hangup()
+                    toast("COLGADO")
+                }
+                endCall()
+                return true
+            }
         }
         handler.postDelayed(object : Runnable {
             override fun run() {
@@ -188,6 +259,15 @@ class PhoneActivity : OsActivity() {
                 }
             }
         }, 1000)
+    }
+
+    /** The 3310 had one speaker; the modern equivalent is the loudspeaker. */
+    private fun toggleCallSpeaker() {
+        val am = getSystemService(AUDIO_SERVICE) as? android.media.AudioManager ?: return
+        val turnOn = !am.isSpeakerphoneOn
+        @Suppress("DEPRECATION")
+        try { am.isSpeakerphoneOn = turnOn } catch (_: Exception) {}
+        toast(if (turnOn) "ALTAVOZ" else "AURICULAR")
     }
 
     private fun endCall() {
@@ -250,6 +330,11 @@ class PhoneActivity : OsActivity() {
         }
     }
 
+    override fun onDestroy() {
+        callListener?.let { DumbInCallService.removeListener(it) }
+        super.onDestroy()
+    }
+
     override fun finishOs() {
         when (screen) {
             Screen.KEYPAD -> showContacts()
@@ -259,6 +344,32 @@ class PhoneActivity : OsActivity() {
     }
 
     override fun onCreateOs(savedInstanceState: Bundle?) {
+        // When dumbOS is the default dialer the system hands real calls to
+        // DumbInCallService; follow them so incoming calls appear here instead
+        // of in someone else's app.
+        callListener = { calls ->
+            handler.post {
+                val call = calls.firstOrNull { it.state != android.telecom.Call.STATE_DISCONNECTED }
+                if (call == null) {
+                    if (callActive) endCall()
+                } else {
+                    val incoming = call.state == android.telecom.Call.STATE_RINGING
+                    val number = call.details?.handle?.schemeSpecificPart ?: ""
+                    if (screen != Screen.CALL && number.isNotBlank()) {
+                        callTarget = number
+                        callSeconds = 0
+                        callActive = call.state == android.telecom.Call.STATE_ACTIVE
+                        showCallScreen(number)
+                        if (incoming) {
+                            titleText = "ENTRANTE"
+                            setKeys("DESCOLGAR", "COLGAR")
+                        }
+                    }
+                    inCallUi?.invalidate()
+                }
+            }
+        }
+        callListener?.let { DumbInCallService.addListener(it) }
         if (!hasPerm(Manifest.permission.READ_CONTACTS)) requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 12)
         val uri: Uri? = intent?.data
         if (uri != null && intent?.action == Intent.ACTION_DIAL) {

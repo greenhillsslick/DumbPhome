@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -112,14 +113,24 @@ class HomeActivity : com.dumbos.ui.OsActivity() {
         }
         content.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        clockView = ClockView(this).also { it.theme = theme }
+        clockView = ClockView(this).also {
+            it.theme = theme
+            // Holding the big clock is the phone's "home" gesture: it is where a
+            // user naturally presses to choose which launcher owns the screen.
+            it.isClickable = true
+            it.isLongClickable = true
+            it.setOnLongClickListener {
+                chooseLauncher()
+                true
+            }
+        }
         col.addView(clockView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         telem = TelemetryView(this).also { it.theme = theme }
         col.addView(telem, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         reload()
-        tiles = PixelList(this, buildTiles().size, Dp.dp(42)).also { list ->
+        tiles = PixelList(this, buildTiles().size, com.dumbos.ui.Rows.two()).also { list ->
             list.theme = theme
             list.paintRow = { canvas, i, sel, rowH ->
                 val t = rowTiles[i]
@@ -127,8 +138,12 @@ class HomeActivity : com.dumbos.ui.OsActivity() {
                 val dim = if (sel) theme.selInk else theme.dim
                 val iconPx = max(1, Dp.dp(2))
                 TYPO.iconRect(canvas, t.icon, ICON_ROWS(t.icon), Dp.dp(2), (rowH - 16 * iconPx) / 2, iconPx, ink)
-                TYPO.draw(canvas, t.label, Dp.dp(40), Dp.dp(6), Sz.BODY, ink)
-                TYPO.drawClipped(canvas, t.badge, Dp.dp(40), Dp.dp(6) + Sz.BODY.lineH() + Dp.dp(1),
+                // Centred as a two-line block, so a taller row never leaves a
+                // gap at the top and never pushes the badge into the next row.
+                val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+                val top = (rowH - block) / 2
+                TYPO.draw(canvas, t.label, Dp.dp(40), top, Sz.BODY, ink)
+                TYPO.drawClipped(canvas, t.badge, Dp.dp(40), top + Sz.BODY.lineH() + Dp.dp(2),
                     width - Dp.dp(50), Sz.SMALL, dim)
                 if (sel) TYPO.draw(canvas, "[RIGHT]", width - Dp.dp(44), (rowH - Sz.SMALL.lineH()) / 2, Sz.SMALL, ink)
             }
@@ -228,6 +243,36 @@ class HomeActivity : com.dumbos.ui.OsActivity() {
         })
     }
 
+    /**
+     * Asks the system to make dumbOS the home app.
+     *
+     * The role manager shows Android's own confirmation dialog with dumbOS
+     * pre-selected, which is as close to "choose your launcher" as an app is
+     * allowed to get; on older releases it falls back to the Home settings page.
+     */
+    private fun chooseLauncher() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            try {
+                val rm = getSystemService(ROLE_SERVICE) as android.app.role.RoleManager
+                if (rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME) &&
+                    !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
+                    startActivityForResult(
+                        rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), 7001
+                    )
+                    return
+                }
+            } catch (_: Exception) {
+                // fall through to the settings page
+            }
+        }
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            toast("AJUSTES NO DISPONIBLES")
+        }
+    }
+
     private fun reload() {
         rowTiles = buildTiles()
         unreadSms = Sms.unreadCount(this)
@@ -262,8 +307,8 @@ class ClockView(ctx: Context) : View(ctx) {
 
     override fun onMeasure(w: Int, h: Int) {
         val ww = if (MeasureSpec.getMode(w) == MeasureSpec.UNSPECIFIED) 320 else MeasureSpec.getSize(w)
-        val unit = max(1, (ww * 0.66f / 29f).toInt())
-        setMeasuredDimension(resolveSize(0, w), Dp.dp(2) + 7 * unit + Dp.dp(5) + Sz.SMALL.lineH() + Dp.dp(4))
+        val unit = max(1, (ww * 0.80f / 29f).toInt())
+        setMeasuredDimension(resolveSize(0, w), Dp.dp(2) + 7 * unit + Dp.dp(7) + Sz.SMALL.lineH() + Dp.dp(4))
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -271,16 +316,21 @@ class ClockView(ctx: Context) : View(ctx) {
         // One "unit" is the width of a font pixel: glyphs advance 6 units and a
         // space 3, minus the trailing gap of the last glyph.
         val glyphUnits = TYPO.normalize(time).fold(0) { acc: Int, c: Char -> acc + if (c == ' ') 3 else 6 } - 1
-        val unit = max(1, (width * 0.66f / glyphUnits.toFloat()).toInt())
+        val unit = max(1, (width * 0.80f / glyphUnits.toFloat()).toInt())
         val tw = glyphUnits * unit
-        val x = (width - tw) / 2
+        // Centre on whole pixels: a half-pixel offset blurs vertical strokes.
+        val x = ((width - tw) / 2).toInt()
         drawBig(canvas, time, x, Dp.dp(2), unit, theme.ink)
-        TYPO.drawCenter(canvas, Clock.today(), width / 2, Dp.dp(2) + 7 * unit + Dp.dp(5), Sz.SMALL, theme.dim)
+        // Small glyphs are taller now, so the date needs its own real gap or it
+        // sits on the descender of the clock.
+        TYPO.drawCenter(canvas, Clock.today(), width / 2, Dp.dp(2) + 7 * unit + Dp.dp(7), Sz.SMALL, theme.dim)
     }
 
     /** Renders the clock well past any Sz by scaling glyph rects. */
     private fun drawBig(canvas: Canvas, text: String, x0: Int, y0: Int, unit: Int, color: Int) {
-        val p = Paint().apply { isAntiAlias = false; this.color = color }
+        // A whole-number unit is mandatory: a 4.6 px font pixel cannot land on
+        // the screen grid, and Android blurs whatever falls between pixels.
+        val p = com.dumbos.ui.Px.blockPaint(color)
         var x = x0
         for (c in TYPO.normalize(text)) {
             if (c == ' ') { x += 3 * unit; continue }

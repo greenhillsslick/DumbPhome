@@ -85,7 +85,7 @@ class MessagesActivity : OsActivity() {
         col.addView(head)
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
 
-        val l = PixelList(this, threads.size, Dp.dp(44))
+        val l = PixelList(this, threads.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val t = threads[i]
@@ -95,13 +95,23 @@ class MessagesActivity : OsActivity() {
             TYPO.iconRect(canvas, "SMS", com.dumbos.ui.ICON_GLYPHS["SMS"]!!, Dp.dp(2), (rowH - 16 * iconPx) / 2, iconPx,
                 if (t.unread > 0) ink else dim)
             val name = t.name.ifBlank { t.number }
-            TYPO.drawClipped(canvas, name, Dp.dp(40), Dp.dp(4), width - Dp.dp(66), Sz.BODY, ink)
+            val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+            val top = (rowH - block) / 2
+            TYPO.drawClipped(canvas, name, Dp.dp(40), top, width - Dp.dp(66), Sz.BODY, ink)
             if (t.unread > 0) TYPO.draw(canvas, t.unread.toString(), width - Dp.dp(10) - TYPO.measure(t.unread.toString(), Sz.SMALL),
                 Dp.dp(4), Sz.SMALL, ink)
-            TYPO.drawClipped(canvas, t.last, Dp.dp(40), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), width - Dp.dp(44), Sz.SMALL, dim)
-            TYPO.drawRight(canvas, Clock.time(t.millis), width - Dp.dp(6), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
+            TYPO.drawClipped(canvas, t.last, Dp.dp(40), top + Sz.BODY.lineH() + Dp.dp(2), width - Dp.dp(44), Sz.SMALL, dim)
+            TYPO.drawRight(canvas, Clock.time(t.millis), width - Dp.dp(6), top + Sz.BODY.lineH() + Dp.dp(2), Sz.SMALL, dim)
         }
         l.onChoose = { i -> openThread(threads[i].number) }
+        l.onLongPress = { i ->
+            val t = threads.getOrNull(i)
+            if (t != null) showConfirm("BORRAR", "BORRAR LA CONVERSACION CON " + t.name + "?", {
+                val ok = Sms.deleteThread(this, t.number)
+                toast(if (ok) "BORRADA" else "NO SE PUDO BORRAR")
+                showThreads()
+            })
+        }
         keyTarget = l
         col.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
@@ -140,6 +150,21 @@ class MessagesActivity : OsActivity() {
         }
     }
 
+    /** Deletes the open conversation, and says so when it cannot. */
+    private fun deleteCurrentThread() {
+        val n = current ?: return
+        if (!Sms.canRead(this)) {
+            toast("SIN PERMISO PARA LEER SMS")
+            requestSmsPermissions()
+            return
+        }
+        showConfirm("BORRAR", "BORRAR TODOS LOS MENSAJES DE ESTA CONVERSACION?", {
+            val ok = Sms.deleteThread(this, n)
+            toast(if (ok) "BORRADOS" else "NO SE PUDO BORRAR")
+            showThreads()
+        })
+    }
+
     private fun paginate() {
         val perPage = 4
         pages = messages.chunked(perPage).ifEmpty { listOf(emptyList()) }
@@ -167,22 +192,30 @@ class MessagesActivity : OsActivity() {
 
     override fun openMenu() {
         if (current == null) {
-            showMenu("MENSAJES", listOf("NUEVO MENSAJE", "ACTUALIZAR", "PERMISOS")) { i ->
+            val sel = (keyTarget as? com.dumbos.ui.PixelList)?.selected ?: 0
+            showMenu("MENSAJES", listOf("NUEVO MENSAJE", "BORRAR ESTA", "ACTUALIZAR", "PERMISOS")) { i ->
                 when (i) {
                     0 -> newMessage()
-                    1 -> showThreads()
-                    2 -> requestSmsPermissions()
+                    1 -> threads.getOrNull(sel)?.let { t ->
+                        showConfirm("BORRAR", "BORRAR LA CONVERSACION CON " + t.name + "?", {
+                            val ok = Sms.deleteThread(this, t.number)
+                            toast(if (ok) "BORRADA" else "NO SE PUDO BORRAR")
+                            showThreads()
+                        })
+                    }
+                    2 -> showThreads()
+                    3 -> requestSmsPermissions()
                 }
             }
         } else {
-            showMenu("CONVERSACION", listOf("ESCRIBIR", "LLAMAR", "MARCAR LEIDO", "BORRAR DE LA VISTA")) { i ->
+            showMenu("CONVERSACION", listOf("ESCRIBIR", "LLAMAR", "MARCAR LEIDO", "BORRAR TODO")) { i ->
                 val n = current ?: return@showMenu
                 when (i) {
                     0 -> compose()
                     1 -> startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL,
                         android.net.Uri.parse("tel:" + android.net.Uri.encode(n))))
                     2 -> { Sms.markRead(this, n); toast("MARCADO") }
-                    3 -> { current = null; showThreads() }
+                    3 -> deleteCurrentThread()
                 }
             }
         }

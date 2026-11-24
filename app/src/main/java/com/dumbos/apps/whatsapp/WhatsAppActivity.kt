@@ -52,7 +52,7 @@ class WhatsAppActivity : OsActivity() {
         conversation = null
         content.removeAllViews()
         titleText = "WHATSAPP"
-        setKeys("ABRIR", "PERMISO")
+        setKeys("ABRIR", "BUSCAR")
         conversations = Bridge.conversations(this).toList().sortedByDescending { it.second.lastOrNull()?.millis ?: 0L }
         val col = vcol(this, 0)
         content.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -72,21 +72,83 @@ class WhatsAppActivity : OsActivity() {
         col.addView(head)
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
 
-        val l = PixelList(this, conversations.size, Dp.dp(40))
+        val l = PixelList(this, conversations.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val (name, msgs) = conversations[i]
             val ink = if (sel) theme.selInk else theme.ink
             val dim = if (sel) theme.selInk else theme.dim
             val last = msgs.lastOrNull()
-            TYPO.drawClipped(canvas, com.dumbos.ui.TYPO.normalize(name), Dp.dp(6), Dp.dp(4), width - Dp.dp(64), Sz.BODY, ink)
-            TYPO.drawRight(canvas, last?.let { Clock.time(it.millis) } ?: "", width - Dp.dp(6), Dp.dp(4), Sz.SMALL, dim)
-            TYPO.drawClipped(canvas, last?.text ?: "", Dp.dp(6), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), width - Dp.dp(70), Sz.SMALL, dim)
-            TYPO.drawRight(canvas, msgs.size.toString(), width - Dp.dp(6), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
+            val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+            val top = (rowH - block) / 2
+            TYPO.drawClipped(canvas, com.dumbos.ui.TYPO.normalize(name), Dp.dp(6), top, width - Dp.dp(64), Sz.BODY, ink)
+            TYPO.drawRight(canvas, last?.let { Clock.time(it.millis) } ?: "", width - Dp.dp(6), top, Sz.SMALL, dim)
+            TYPO.drawClipped(canvas, last?.text ?: "", Dp.dp(6), top + Sz.BODY.lineH() + Dp.dp(2), width - Dp.dp(70), Sz.SMALL, dim)
+            TYPO.drawRight(canvas, msgs.size.toString(), width - Dp.dp(6), top + Sz.BODY.lineH() + Dp.dp(2), Sz.SMALL, dim)
         }
         l.onChoose = { i -> openConversation(conversations[i].first) }
         keyTarget = l
         col.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+    }
+
+    /**
+     * Search a contact to start a chat, which is what a phone book is for.
+     * It searches the system contacts and the people already bridged, then
+     * opens WhatsApp straight into that chat.
+     */
+    private fun search() {
+        showInput("BUSCAR CONTACTO", "NOMBRE O NUMERO") { q ->
+            val term = q.trim()
+            if (term.isEmpty()) return@showInput
+            val hits = ArrayList<Pair<String, String>>()   // label, phone
+            val wanted = com.dumbos.ui.TYPO.normalize(term)
+            for (c in com.dumbos.core.Contacts.list(this)) {
+                val name = com.dumbos.ui.TYPO.normalize(c.name)
+                if (name.contains(wanted) || c.number.contains(term.filter { it.isDigit() })) {
+                    hits.add(c.name.ifBlank { c.number } to c.number)
+                }
+            }
+            if (hits.isEmpty()) {
+                // No contact match: let the number be used directly, the way a
+                // 3310 would.
+                if (term.count { it.isDigit() } >= 6) {
+                    sendToNumber(term, term)
+                } else {
+                    toast("SIN RESULTADOS")
+                }
+                return@showInput
+            }
+            if (hits.size == 1) {
+                sendToNumber(hits[0].first, hits[0].second)
+            } else {
+                showMenu("CONTACTOS", hits.map { it.first }) { i -> sendToNumber(hits[i].first, hits[i].second) }
+            }
+        }
+    }
+
+    /**
+     * Opens WhatsApp's chat with one number. WhatsApp's public API for this is
+     * the wa.me deep link, which needs no permissions and no account inside
+     * dumbOS: it is the same call the WhatsApp app makes for its own links.
+     */
+    private fun sendToNumber(label: String, number: String) {
+        val digits = number.filter { it.isDigit() || it == '+' }.removePrefix("+")
+        if (digits.length < 6) { toast("NUMERO NO VALIDO"); return }
+        showMenu("WHATSAPP " + label.uppercase(), listOf("ABRIR CHAT", "ESCRIBIR SMS", "LLAMAR")) { i ->
+            when (i) {
+                0 -> {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://wa.me/" + digits)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (_: Exception) {
+                        toast("WHATSAPP NO INSTALADO")
+                    }
+                }
+                1 -> startActivity(Intent(this, com.dumbos.apps.sms.MessagesActivity::class.java)
+                    .putExtra("number", number))
+                2 -> startActivity(Intent(this, com.dumbos.apps.phone.PhoneActivity::class.java))
+            }
+        }
     }
 
     private fun openConversation(name: String) {
@@ -98,7 +160,7 @@ class WhatsAppActivity : OsActivity() {
         val col = vcol(this, 0)
         content.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
-        val l = PixelList(this, msgs.size, Dp.dp(52))
+        val l = PixelList(this, msgs.size, com.dumbos.ui.Rows.two(pad = 14))
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val m = msgs[i]
@@ -147,6 +209,12 @@ class WhatsAppActivity : OsActivity() {
     }
 
     override fun openMenu() {
+        // On the list, the right soft key is BUSCAR: with no notifications yet
+        // the old screen had no way to reach a contact at all.
+        if (conversation == null) {
+            search()
+            return
+        }
         if (conversation != null) {
             showMenu("PUENTE", listOf("RESPONDER", "ABRIR WHATSAPP", "COPIAR TEXTO", "VOLVER")) { i ->
                 val name = conversation ?: return@showMenu
@@ -163,16 +231,18 @@ class WhatsAppActivity : OsActivity() {
             }
         } else {
             showMenu("PUENTE WHATSAPP", listOf(
+                "BUSCAR CONTACTO",
                 "CONCEDER ACCESO A NOTIFICACIONES",
                 "ABRIR WHATSAPP",
                 "REFRESCAR",
                 "BORRAR BUZON",
             )) { i ->
                 when (i) {
-                    0 -> Bridge.requestAccess(this)
-                    1 -> openWhatsApp()
-                    2 -> showConversations()
-                    3 -> showConfirm("BORRAR", "BORRAR TODOS LOS MENSAJES PUENTEADOS?", { Bridge.clear(this); showConversations() })
+                    0 -> search()
+                    1 -> Bridge.requestAccess(this)
+                    2 -> openWhatsApp()
+                    3 -> showConversations()
+                    4 -> showConfirm("BORRAR", "BORRAR TODOS LOS MENSAJES PUENTEADOS?", { Bridge.clear(this); showConversations() })
                 }
             }
         }

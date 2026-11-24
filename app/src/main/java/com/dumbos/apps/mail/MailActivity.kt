@@ -48,16 +48,21 @@ class MailActivity : OsActivity() {
         col.addView(head)
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
 
-        val l = PixelList(this, messages.size, Dp.dp(46))
+        val l = PixelList(this, messages.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val m = messages[i]
             val ink = if (sel) theme.selInk else if (m.unread) theme.ink else theme.dim
             val dim = if (sel) theme.selInk else theme.dim
+            // Centre the from+subject block in the row instead of pinning it to
+            // 4dp from the top, which pushed the subject out of the row.
+            val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+            val top = ((rowH - block) / 2).coerceAtLeast(0)
             if (m.unread) TYPO.iconRect(canvas, "DOT", com.dumbos.ui.SYMBOL_GLYPHS["DOT"]!!, Dp.dp(2), rowH / 2 - 3 * Dp.dp(2), Dp.dp(2), ink)
-            TYPO.drawClipped(canvas, m.from, Dp.dp(10), Dp.dp(4), width - Dp.dp(56), Sz.BODY, ink)
-            TYPO.drawRight(canvas, Clock.time(m.millis), width - Dp.dp(6), Dp.dp(4), Sz.SMALL, dim)
-            TYPO.drawClipped(canvas, m.subject, Dp.dp(10), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), width - Dp.dp(16), Sz.SMALL, dim)
+            val tm = Clock.time(m.millis)
+            TYPO.drawClipped(canvas, m.from, Dp.dp(10), top, width - Dp.dp(14) - TYPO.measure(tm, Sz.SMALL), Sz.BODY, ink)
+            TYPO.drawRight(canvas, tm, width - Dp.dp(6), top, Sz.SMALL, dim)
+            TYPO.drawClipped(canvas, m.subject, Dp.dp(10), top + Sz.BODY.lineH() + Dp.dp(2), width - Dp.dp(16), Sz.SMALL, dim)
         }
         l.onChoose = { i -> openMessage(messages[i]) }
         keyTarget = l

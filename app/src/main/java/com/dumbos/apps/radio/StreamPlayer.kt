@@ -31,7 +31,11 @@ import java.net.URL
  * frames and writes PCM into AudioTrack. Errors surface through [Listener] so
  * the UI can say something true instead of pretending to play.
  */
-class StreamPlayer(private val listener: Listener) {
+class StreamPlayer(
+    /** Needed only to pick the output device; the player holds it weakly. */
+    private val appCtx: android.content.Context,
+    private val listener: Listener,
+) {
 
     interface Listener {
         /** Audio is flowing. */
@@ -349,13 +353,8 @@ class StreamPlayer(private val listener: Listener) {
     private fun buildTrack(sampleRate: Int, channels: Int): AudioTrack {
         val chMask = if (channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
         val minBuf = AudioTrack.getMinBufferSize(sampleRate, chMask, AudioFormat.ENCODING_PCM_16BIT)
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(Speaker.musicAttributes())
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -366,6 +365,11 @@ class StreamPlayer(private val listener: Listener) {
             .setBufferSizeInBytes(maxOf(minBuf, 8192) * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        // Ask for the phone's own loudspeaker. Whether that is honoured depends
+        // on the ROM, so the return value is deliberately not fatal: the UI keeps
+        // a switch that reports what actually happened.
+        Speaker.applyPreferredDevice(appCtx, track)
+        return track
     }
 
     private fun humanError(e: Throwable): String = when {

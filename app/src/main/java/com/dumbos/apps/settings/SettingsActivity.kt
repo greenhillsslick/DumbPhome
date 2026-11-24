@@ -71,8 +71,13 @@ class SettingsActivity : OsActivity() {
         items = build()
         val col = vcol(this)
         content.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val l = PixelList(this, items.size, Dp.dp(34))
+        val l = PixelList(this, items.size, com.dumbos.ui.Rows.one())
         l.theme = theme
+        // Section headers are short rows; without this they overlap the item
+        // underneath (the same bug the user reported as "el texto se superpone").
+        l.rowHeights = IntArray(items.size) { i ->
+            if (items[i].kind == Kind.SECTION) Sz.SMALL.lineH() + Dp.dp(10) else com.dumbos.ui.Rows.one()
+        }
         l.paintRow = { canvas, i, sel, rowH ->
             val it0 = items[i]
             val ink = if (sel) theme.selInk else theme.ink
@@ -80,11 +85,15 @@ class SettingsActivity : OsActivity() {
             if (it0.kind == Kind.SECTION) {
                 TYPO.draw(canvas, it0.title, Dp.dp(6), (rowH - Sz.SMALL.lineH()) / 2, Sz.SMALL, dim)
             } else {
-                TYPO.drawClipped(canvas, it0.title, Dp.dp(6), Dp.dp(4), width - Dp.dp(70), Sz.BODY, ink)
-                TYPO.drawRight(canvas, it0.value, width - Dp.dp(8), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
+                // Centre the two-line block in the real row height instead of
+                // pinning it to 4dp from the top.
+                val block = Sz.BODY.lineH() + Dp.dp(1) + Sz.SMALL.lineH()
+                val top = ((rowH - block) / 2).coerceAtLeast(0)
+                TYPO.drawClipped(canvas, it0.title, Dp.dp(6), top, width - Dp.dp(60), Sz.BODY, ink)
+                TYPO.drawRight(canvas, it0.value, width - Dp.dp(8), top + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
                 if (it0.kind == Kind.TOGGLE_ON) {
                     TYPO.draw(canvas, "[X]", width - Dp.dp(8) - TYPO.measure(it0.value, Sz.SMALL) - Dp.dp(8),
-                        Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
+                        top + Sz.BODY.lineH() + Dp.dp(1), Sz.SMALL, dim)
                 }
             }
         }
@@ -167,7 +176,7 @@ class SettingsActivity : OsActivity() {
         items.add(Item("MENSAJES SIN LEER", Sms.unreadCount(this).toString(), Kind.LINK) {
             startActivity(Intent(this, MessagesActivity::class.java))
         })
-        items.add(Item("ACERCA DE DUMBOS", "0.1.0", Kind.INFO) { showAbout() })
+        items.add(Item("ACERCA DE DUMBOS", "1.0.6", Kind.INFO) { showAbout() })
         return items
     }
 
@@ -234,7 +243,7 @@ class SettingsActivity : OsActivity() {
 
     private fun showAbout() {
         val about = """
-            DUMBOS 0.1.0
+            DUMBOS 1.0.6
             UN LAUNCHER Y UN ECOSISTEMA
             MONOCROMO PARA ANDROID.
 

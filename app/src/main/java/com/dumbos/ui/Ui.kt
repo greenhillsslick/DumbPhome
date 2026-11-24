@@ -14,6 +14,8 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -105,16 +107,53 @@ abstract class OsActivity : Activity(), Themed {
         }
         window.statusBarColor = theme.bg
         window.navigationBarColor = theme.bg
+        // dumbOS draws its own status strip (clock, signal, battery), so the
+        // system bars are pure waste: hide them and use the whole panel.
+        hideSystemBars()
         root.setOnApplyWindowInsetsListener { v, insets ->
-            @Suppress("DEPRECATION")
-            val top = insets.systemWindowInsetTop
+            // Bar-hidden insets are zero, but a notch still has to be respected:
+            // text under a camera hole is unreadable, not "full screen".
+            val cut = if (Build.VERSION.SDK_INT >= 28) {
+                @Suppress("DEPRECATION")
+                insets.displayCutout?.safeInsetTop ?: 0
+            } else 0
             @Suppress("DEPRECATION")
             val bottom = insets.systemWindowInsetBottom
-            val cut = if (Build.VERSION.SDK_INT >= 28) insets.displayCutout?.safeInsetTop ?: 0 else 0
-            v.setPadding(0, max(top, cut), 0, bottom)
+            v.setPadding(0, cut, 0, bottom)
             insets
         }
         onCreateOs(savedInstanceState)
+    }
+
+    /**
+     * Hides the status and navigation bars. Called on create and again on every
+     * window-focus gain, because a swipe from the edge brings them back and
+     * nothing is more annoying than a launcher that loses its own chrome.
+     */
+    protected fun hideSystemBars() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                it.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     protected abstract fun buildLayout()
@@ -181,7 +220,7 @@ abstract class OsActivity : Activity(), Themed {
 
     /** 3310-style popup list. Returns the chosen index or -1 when cancelled. */
     fun showMenu(title: String, items: List<String>, onPick: (Int) -> Unit) {
-        val panel = PixelList(this, items.size, Dp.dp(30)).apply {
+        val panel = PixelList(this, items.size, com.dumbos.ui.Rows.one()).apply {
             this.theme = this@OsActivity.theme
             paintRow = { canvas, i, sel, rowH ->
                 val ink = if (sel) this@OsActivity.theme.selInk else this@OsActivity.theme.ink

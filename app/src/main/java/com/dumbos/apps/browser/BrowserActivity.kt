@@ -48,7 +48,7 @@ class BrowserActivity : OsActivity() {
         }
         col.addView(intro)
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
-        val l = PixelList(this, WebHome.LINKS.size, Dp.dp(32))
+        val l = PixelList(this, WebHome.LINKS.size, com.dumbos.ui.Rows.one())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val ink = if (sel) theme.selInk else theme.ink

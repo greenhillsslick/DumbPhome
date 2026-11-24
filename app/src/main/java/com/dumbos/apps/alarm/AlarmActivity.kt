@@ -66,7 +66,9 @@ class AlarmActivity : OsActivity() {
 
         val t = TimerStrip(this).also { it.theme = theme; it.get = { timerRunning to timerEndsAt } }
         timerView = t
-        col.addView(t, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(38)))
+        // The strip draws a TITLE-size countdown; 38dp clipped it once the type
+        // scale grew. Derive the height from the font instead.
+        col.addView(t, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Sz.TITLE.lineH() + Dp.dp(16)))
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
 
         if (list.isEmpty()) {
@@ -82,7 +84,7 @@ class AlarmActivity : OsActivity() {
             return
         }
 
-        val l = PixelList(this, list.size, Dp.dp(46))
+        val l = PixelList(this, list.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val a = list[i]
@@ -94,6 +96,14 @@ class AlarmActivity : OsActivity() {
             TYPO.drawRight(canvas, daysLabel(a), width - Dp.dp(6), Dp.dp(4) + Sz.TITLE.lineH() + Dp.dp(1), Sz.SMALL, dim)
         }
         l.onChoose = { i -> edit(list[i]) }
+        l.onLongPress = { i ->
+            val a = list.getOrNull(i)
+            if (a != null) showConfirm("BORRAR", "BORRAR ALARMA " + String.format("%02d:%02d", a.hour, a.minute) + "?", {
+                Alarms.delete(this, a.id)
+                toast("BORRADA")
+                showAlarms()
+            })
+        }
         keyTarget = l
         col.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
@@ -108,6 +118,7 @@ class AlarmActivity : OsActivity() {
     override fun openMenu() {
         val sel = (keyTarget as? PixelList)?.selected ?: 0
         val current = list.getOrNull(sel)
+
         val items = if (current == null) listOf("NUEVA ALARMA", "TEMPORIZADOR", "CUENTA ATRAS")
         else listOf("EDITAR", "ACTIVAR/DESACTIVAR", "BORRAR", "NUEVA ALARMA", "TEMPORIZADOR")
         showMenu("ALARMAS", items) { i ->

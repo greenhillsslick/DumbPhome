@@ -37,26 +37,39 @@ class NotesActivity : OsActivity() {
         open = null
         content.removeAllViews()
         titleText = "NOTAS"
-        setKeys("LEER", "NUEVA")
+        setKeys("LEER", "MENU")
         notes = Notes.all(this).sortedByDescending { it.millis }
         val col = vcol(this)
         content.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         col.addView(HRule(this, theme.dim), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Dp.dp(3)))
-        val l = PixelList(this, notes.size, Dp.dp(44))
+        val l = PixelList(this, notes.size, com.dumbos.ui.Rows.two())
         l.theme = theme
         l.paintRow = { canvas, i, sel, rowH ->
             val n = notes[i]
             val ink = if (sel) theme.selInk else theme.ink
             val dim = if (sel) theme.selInk else theme.dim
             TYPO.iconRect(canvas, "PENCIL", com.dumbos.ui.SYMBOL_GLYPHS["PENCIL"]!!, Dp.dp(2), rowH / 2 - 3 * Dp.dp(2), Dp.dp(2), if (sel) ink else dim)
-            TYPO.drawClipped(canvas, n.title.ifBlank { "(SIN TITULO)" }, Dp.dp(12), Dp.dp(4), width - Dp.dp(60), Sz.BODY, ink)
-            TYPO.drawRight(canvas, Clock.time(n.millis), width - Dp.dp(6), Dp.dp(4), Sz.SMALL, dim)
+            val block = Sz.BODY.lineH() + Dp.dp(2) + Sz.SMALL.lineH()
+            val top = (rowH - block) / 2
+            TYPO.drawClipped(canvas, n.title.ifBlank { "(SIN TITULO)" }, Dp.dp(12), top, width - Dp.dp(60), Sz.BODY, ink)
+            TYPO.drawRight(canvas, Clock.time(n.millis), width - Dp.dp(6), top, Sz.SMALL, dim)
             val first = n.body.lines().firstOrNull { it.isNotBlank() } ?: ""
-            TYPO.drawClipped(canvas, first, Dp.dp(12), Dp.dp(4) + Sz.BODY.lineH() + Dp.dp(1), width - Dp.dp(20), Sz.SMALL, dim)
+            TYPO.drawClipped(canvas, first, Dp.dp(12), top + Sz.BODY.lineH() + Dp.dp(2), width - Dp.dp(20), Sz.SMALL, dim)
         }
         l.onChoose = { i -> openNote(notes[i]) }
+        l.onLongPress = { i -> confirmDelete(notes.getOrNull(i)) }
         keyTarget = l
         col.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+    }
+
+    /** Holding a note asks whether to delete it; the menu keeps the rest. */
+    private fun confirmDelete(n: Note?) {
+        if (n == null) return
+        showConfirm("BORRAR", "BORRAR \"" + n.title.ifBlank { "NOTA" } + "\"?", {
+            Notes.delete(this, n.id)
+            toast("BORRADA")
+            showList()
+        })
     }
 
     private fun openNote(n: Note) {
