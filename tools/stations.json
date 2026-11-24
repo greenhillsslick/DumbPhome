@@ -85,20 +85,20 @@
       "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3"
     },
     {
-      "key": "EUROPAFM",
-      "name": "EUROPA FM",
-      "desc": "EXITOS DE HOY",
+      "key": "LOS40DANCE",
+      "name": "LOS40 DANCE",
+      "desc": "DANCE Y ELECTRONICA",
       "freq": 103.1,
-      "fmt": "aac",
-      "url": "https://radio-atres-live.ondacero.es/api/livestream-redirect/EFMAAC.aac"
+      "fmt": "mp3",
+      "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3"
     },
     {
-      "key": "MELODIA",
-      "name": "MELODIA FM",
-      "desc": "MUSICA SUAVE",
+      "key": "LOS40CLAS",
+      "name": "LOS40 CLASSIC",
+      "desc": "CLASICOS DE LOS 40",
       "freq": 104.6,
-      "fmt": "aac",
-      "url": "https://radio-atres-live.ondacero.es/api/livestream-redirect/MELODIA_FMAAC.aac"
+      "fmt": "mp3",
+      "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3"
     },
     {
       "key": "CANALSUR",

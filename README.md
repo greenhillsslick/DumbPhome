@@ -198,10 +198,16 @@ Sin librerías de terceros, sin `MediaPlayer` opaco. Consecuencias de hacerlo as
   `app/.../radio/Stations.kt` y `web/stations.js`. **No edites esos dos ficheros a mano.**
 - `python3 tools/check_streams.py` comprueba las 13 URLs desde la red real y saca una tabla. En CI
   corre en cada push (sin bloquear el build, porque una emisora puede estar en mantenimiento) y el
-  resultado queda en el resumen del *workflow* y en un comentario del commit, que sí es legible
-  desde cualquier sitio. La última pasada: **9 de 13** emisoras respondían; las demás se cambiaron
-  por otras que sí publican MP3/AAC directo (ROCK FM, CADENA 100 y LOS40 Classic solo ofrecen HLS,
-  que este decodificador no soporta, así que ocupan su frecuencia RADIO 5 y MELODÍA FM).
+  resultado queda en el resumen del *workflow* y en un comentario del commit, que sí es
+  legible desde cualquier sitio.
+
+  Comprobado el 24-11-2026: **11 de 13** emisoras respondían. Las dos que faltaban eran
+  EUROPA FM y MELODÍA FM, host de Atresmedia que devuelve 403 a peticiones de IP de centro
+  de datos (no es el *User-Agent*: se probaron seis variantes y todas dan 403). ONDA CERO
+  salva el bloqueo porque su redirección acaba en StreamTheWorld. Como una emisora que
+  siempre dice SIN SEÑAL no merece una frecuencia, en 103.1 y 104.6 ahora están LOS40 DANCE
+  y LOS40 CLASSIC, del mismo grupo, y la siguiente pasada del comprobador dictamina si
+  responden. Mientras no lo diga un run en verde, no se afirma.
 
 ## Los modos de notificación
 
