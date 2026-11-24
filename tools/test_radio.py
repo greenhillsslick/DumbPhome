@@ -136,6 +136,12 @@ def test_player_never_fakes_audio():
     check("output is AudioTrack", "AudioTrack.Builder" in player)
     check("ID3 tags are skipped", "id3Skipped" in player)
     check("volume reaches the track", "track.setVolume(volume)" in player)
+    # Atresmedia 403s a bare UA, so a browser-like one is what makes audio start.
+    check(
+        "the player identifies like a media client",
+        "Mozilla/5.0" in player,
+        "some stations answer 403 to a non-browser User-Agent",
+    )
 
 
 def test_activity_is_honest():

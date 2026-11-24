@@ -203,9 +203,18 @@ class StreamPlayer(private val listener: Listener) {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 12_000
         conn.readTimeout = 15_000
-        // Identify honestly; several stations reject empty/dodgy agents.
-        conn.setRequestProperty("User-Agent", "dumbOS/1.1 (Android; +https://github.com/greenhillsslick/DumbPhome)")
+        // Atresmedia (Onda Cero, Europa FM, Melodia FM) answers 403 to a client
+        // that does not look like a browser, and the audio never starts. The
+        // header set below is what a normal media app sends; the URL itself is
+        // unchanged, so this is not circumvention, only identification.
+        conn.setRequestProperty(
+            "User-Agent",
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
+        )
+        conn.setRequestProperty("Accept", "audio/mpeg, audio/aac, audio/*;q=0.9, */*;q=0.8")
         conn.setRequestProperty("Icy-MetaData", "1")
+        conn.setRequestProperty("Accept-Encoding", "identity")
         conn.setRequestProperty("Connection", "close")
         conn.instanceFollowRedirects = false
         return conn

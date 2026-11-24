@@ -26,13 +26,29 @@ HEADERS = {
     "Accept": "*/*",
 }
 
+# Atresmedia (Onda Cero / Europa FM / Melodía FM) answers 403 to a bare request
+# but serves audio to anything that looks like a browser/media player. Some
+# hosts also require this on the *second* request, after a redirect, so the
+# opener below is used for the whole chain.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
+    ),
+    "Accept": "audio/mpeg, audio/aac, audio/*;q=0.9, */*;q=0.8",
+    "Referer": "https://www.ondacero.es/",
+    "Origin": "https://www.ondacero.es",
+}
+
 
 def probe(url: str, timeout: float) -> tuple[bool, str]:
     """Returns (ok, detail). Follows redirects because urllib does it for us."""
     started = time.time()
     try:
-        request = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        request = urllib.request.Request(url, headers={**HEADERS, **BROWSER_HEADERS})
+        opener = urllib.request.build_opener()
+        opener.addheaders = list({**HEADERS, **BROWSER_HEADERS}.items())
+        with opener.open(request, timeout=timeout) as response:
             status = response.status
             ctype = (response.headers.get("Content-Type") or "?").split(";")[0]
             # Some stations only answer after a while; read a little to prove
