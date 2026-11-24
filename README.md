@@ -58,15 +58,23 @@ Cosas que probar:
 - **Radio FM**: arrastra la aguja y pulsa **OK**. Cada emisora memorizada es una emisora de verdad: la web reproduce su *stream* con `<audio>` y la APK lo conecta, lo decodifica y lo suena ella misma (`HttpURLConnection` → `MediaCodec` → `AudioTrack`). Si una emisora no responde, la pantalla dice **SIN SEÑAL** y deja de sonar; nunca hay estática fingida.
 - **WhatsApp**: abre una conversación, pulsa **OK** y escribe; verás cómo se puentea la respuesta.
 - **Navegador**: `MENU → IR A URL` abre páginas de demostración con el mismo motor de extracción de texto.
+- **Altavoz**: en la radio, `MENU → ALTAVOZ SI/NO` manda el audio al altavoz del móvil (o lo devuelve
+  al auricular). En llamada, `OK` alterna el altavoz y `BACK` cuelga.
+- **Borrar**: mantén pulsado en Notas, Alarmas o en la lista de conversaciones de Mensajes; también
+  está en el menú (`MENU → BORRAR ESTA`). El menú del hilo permite `BORRAR TODO`.
+- **WhatsApp → BUSCAR**: escribe un nombre o un número. Un solo contacto abre el chat; varios te dan
+  la lista; seis o más dígitos van directos a ese número.
+- **Launcher**: mantén pulsado el reloj grande del inicio y dumbOS pide el papel de aplicación de
+  inicio (Android 10+) o abre los ajustes de inicio del sistema.
 
 ## Descargar la APK
 
-Las versiones publicadas están en **[Releases](../../releases)**. La última es **v1.0.2**. Cada una trae:
+Las versiones publicadas están en **[Releases](../../releases)**. La última es **v1.0.6**. Cada una trae:
 
 | Fichero | Para qué |
 |---|---|
-| `dumbOS-v1.0.2.apk` | Release firmada. Instala esta. |
-| `dumbOS-v1.0.2-debug.apk` | Depuración, convive con la anterior (paquete `.debug`). |
+| `dumbOS-v1.0.6.apk` | Release firmada. Instala esta. |
+| `dumbOS-v1.0.6-debug.apk` | Depuración, convive con la anterior (paquete `.debug`). |
 | `SHA256SUMS.txt` | Sumas para comprobar la descarga. |
 
 Instalación: descarga el APK, ábrelo en el móvil (Android 8 o superior) y acepta instalar desde el
@@ -94,14 +102,14 @@ build y **falla si el firmante no es `CN=dumbOS`**.
 
 `tools/audit_apk.sh` corre en cada build y sobre la release publicada:
 
-| Comprobación | Resultado de v1.0.0 |
+| Comprobación | Resultado de v1.0.6 |
 |---|---|
-| badging | `com.dumbos` v1.0.0, minSdk 26, targetSdk 34 |
+| badging | `com.dumbos` v1.0.6, minSdk 26, targetSdk 34 |
 | firma | v2 verificada, RSA 4096, `CN=dumbOS` |
 | componentes del manifiesto | 16 declarados |
-| clases en el DEX | 15/15 presentes (el alias resuelve a `HomeActivity`) |
+| clases en el DEX | todas presentes (el alias resuelve a `HomeActivity`) |
 | `zipalign -c 4` | correcto |
-| tamaño | 764 KB |
+| tamaño | ~790 KB |
 
 La comprobación de clases es la que evita el fallo clásico: un componente declarado en el
 manifiesto que el compilador no metió en el DEX instala bien y revienta al abrir.
