@@ -165,7 +165,7 @@ Dentro de dumbOS: `Ajustes → SER EL LAUNCHER` abre ese panel.
 | **Notas** | Lista, lector y editor de texto plano, guardado local. |
 | **Navegador** | Descarga HTTPS, quita *todas* las etiquetas, extrae el texto y una lista numerada de enlaces. Sin imágenes, sin scripts, sin cookies. |
 | **WhatsApp** | Lee las notificaciones de WhatsApp/Telegram/Signal mediante el plugin de acceso a notificaciones y las muestra como texto; responde con el compositor de WhatsApp. |
-| **Radio FM** | Dial arrastrable de 87.5 a 108 MHz con 14 emisoras memorizadas; reproduce su *stream* real (MP3/AAC) con decodificador propio, muestra lo que suena y para al salir. Sin datos, **SIN SEÑAL**. |
+| **Radio FM** | Dial arrastrable de 87.5 a 108 MHz con 13 emisoras memorizadas; reproduce su *stream* real (MP3/AAC) con decodificador propio, muestra lo que suena y para al salir. Sin datos, **SIN SEÑAL**. |
 | **Alarmas** | Alarmas exactas que sobreviven al reinicio, repetición por días de la semana, temporizador, pantalla de alarma a pantalla completa con posponer. |
 
 ![Notas](media/screens/notes.png) ![Correo](media/screens/mail.png) ![Navegador](media/screens/browser.png)
@@ -196,9 +196,12 @@ Sin librerías de terceros, sin `MediaPlayer` opaco. Consecuencias de hacerlo as
 - Las emisoras cambian de URL con el tiempo. El catálogo vive en `tools/stations.json`
   (`key/name/desc/freq/fmt/url`), y `python3 tools/gen_stations.py` genera desde ahí
   `app/.../radio/Stations.kt` y `web/stations.js`. **No edites esos dos ficheros a mano.**
-- `python3 tools/check_streams.py` comprueba las 14 URLs desde la red real y saca una tabla. En CI
+- `python3 tools/check_streams.py` comprueba las 13 URLs desde la red real y saca una tabla. En CI
   corre en cada push (sin bloquear el build, porque una emisora puede estar en mantenimiento) y el
-  resultado queda en el resumen del *workflow*.
+  resultado queda en el resumen del *workflow* y en un comentario del commit, que sí es legible
+  desde cualquier sitio. La última pasada: **9 de 13** emisoras respondían; las demás se cambiaron
+  por otras que sí publican MP3/AAC directo (ROCK FM, CADENA 100 y LOS40 Classic solo ofrecen HLS,
+  que este decodificador no soporta, así que ocupan su frecuencia RADIO 5 y MELODÍA FM).
 
 ## Los modos de notificación
 

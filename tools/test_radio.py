@@ -67,26 +67,36 @@ def test_catalogue():
     check("no two stations share a snap window", not too_close, ", ".join(too_close))
 
 
+GENERATED = (
+    "app/src/main/java/com/dumbos/apps/radio/Stations.kt",
+    "web/stations.js",
+)
+
+
 def test_generated_matches_json():
-    """Stations.kt / stations.js must be exactly what the generator writes."""
-    before = subprocess.run(
+    """Stations.kt / stations.js must be exactly what the generator writes.
+
+    Compared against the files' own bytes rather than `git diff`, so a correct
+    but uncommitted regeneration passes locally and the check still catches a
+    stale file in CI.
+    """
+    before = {rel: (ROOT / rel).read_bytes() for rel in GENERATED}
+
+    run = subprocess.run(
         [sys.executable, str(ROOT / "tools/gen_stations.py")],
         capture_output=True, text=True, cwd=ROOT,
     )
-    if before.returncode != 0:
-        check("generator runs", False, before.stderr.strip()[-300:])
+    if run.returncode != 0:
+        check("generator runs", False, run.stderr.strip()[-300:])
         return
     check("generator runs", True)
 
-    diff = subprocess.run(
-        ["git", "diff", "--exit-code", "--",
-         "app/src/main/java/com/dumbos/apps/radio/Stations.kt", "web/stations.js"],
-        capture_output=True, text=True, cwd=ROOT,
-    )
+    after = {rel: (ROOT / rel).read_bytes() for rel in GENERATED}
+    stale = [rel for rel in GENERATED if before[rel] != after[rel]]
     check(
         "Stations.kt and stations.js are in sync with stations.json",
-        diff.returncode == 0,
-        "run python3 tools/gen_stations.py and commit the result",
+        not stale,
+        "stale: " + ", ".join(stale) + " (the generator just rewrote them)",
     )
 
 
