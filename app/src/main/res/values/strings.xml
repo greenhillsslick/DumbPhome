@@ -12,4 +12,8 @@
     <string name="app_radio">Radio FM</string>
     <string name="app_alarm">Alarmas</string>
     <string name="notif_listener">dumbOS: puente de notificaciones</string>
+    <!-- Shown on the system notification-access page. This grant is what lets
+         dumbOS read the phone's media sessions, which is how it drives the
+         hardware FM tuner. Saying so is the honest thing to do. -->
+    <string name="listener_desc">Lee los mensajes de WhatsApp/Telegram/Signal como texto y permite a la radio usar el sintonizador FM del telefono.</string>
 </resources>

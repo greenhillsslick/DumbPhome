@@ -109,12 +109,21 @@ class MessagesActivity : OsActivity() {
     private fun openThread(number: String) {
         current = number
         Sms.markRead(this, number)
+        // Re-read *after* marking, so the conversation we draw already shows the
+        // read flag instead of the state that was true a moment ago.
         messages = Sms.conversation(this, number)
         paginate()
         titleText = Contacts.nameFor(this, number).ifBlank { number }
         setKeys("ESCRIBIR", "OPCIONES")
         content.removeAllViews()
-        val v = ConversationView(this).also { it.theme = theme }
+        // The view is built after paginate(), so it must be handed the loaded
+        // conversation and the current page: an empty list here is a blank
+        // screen that looks like "reading a message" but shows nothing.
+        val v = ConversationView(this).also {
+            it.theme = theme
+            it.messages = messages
+            it.page = page
+        }
         convView = v
         content.addView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         keyTarget = object : com.dumbos.ui.OsView {
@@ -200,7 +209,10 @@ class MessagesActivity : OsActivity() {
         val data = intent?.data
         val fromData = data?.schemeSpecificPart?.substringBefore('?')?.replace(" ", "")
         val target = n ?: fromData
-        if (!target.isNullOrBlank()) openThread(target)
+        if (!target.isNullOrBlank()) {
+            // Opening from a notification should also clear the unread mark.
+            openThread(target)
+        }
     }
 
     override fun onResume() {

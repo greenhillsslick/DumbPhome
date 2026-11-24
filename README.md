@@ -19,7 +19,8 @@ Monocromo · Tipografía de píxeles 5×7 · Iconos 16×16 · Sin animaciones, s
 ## Qué es esto
 
 dumbOS es **una app de Android que actúa de launcher** y trae dentro su propio ecosistema:
-teléfono, mensajes, correo, notas, navegador de texto, puente de WhatsApp, radio FM, alarmas y ajustes.
+teléfono, mensajes, correo, notas, navegador de texto, puente de WhatsApp, radio (FM del teléfono
+o internet), alarmas y ajustes.
 Todo comparte una única identidad visual inspirada en los **Nokia de los 90/2000**: 3310, 3210, 1100.
 
 No es una skin. Es un motor de dibujo propio: una **fuente de mapa de bits 5×7** (más 4×6 para texto menudo),
@@ -165,48 +166,56 @@ Dentro de dumbOS: `Ajustes → SER EL LAUNCHER` abre ese panel.
 | **Notas** | Lista, lector y editor de texto plano, guardado local. |
 | **Navegador** | Descarga HTTPS, quita *todas* las etiquetas, extrae el texto y una lista numerada de enlaces. Sin imágenes, sin scripts, sin cookies. |
 | **WhatsApp** | Lee las notificaciones de WhatsApp/Telegram/Signal mediante el plugin de acceso a notificaciones y las muestra como texto; responde con el compositor de WhatsApp. |
-| **Radio FM** | Dial arrastrable de 87.5 a 108 MHz con 13 emisoras memorizadas; reproduce su *stream* real (MP3/AAC) con decodificador propio, muestra lo que suena y para al salir. Sin datos, **SIN SEÑAL**. |
+| **Radio FM** | Dial de 87.5 a 108 MHz. **Usa el sintonizador FM del teléfono** cuando su app de radio publica una sesión de medios (FM real, con antena); si no, las 13 frecuencias son emisoras por internet decodificadas por la app. Siempre dice cuál de las dos está sonando. |
 | **Alarmas** | Alarmas exactas que sobreviven al reinicio, repetición por días de la semana, temporizador, pantalla de alarma a pantalla completa con posponer. |
 
 ![Notas](media/screens/notes.png) ![Correo](media/screens/mail.png) ![Navegador](media/screens/browser.png)
 
-## La radio: por qué no es FM de verdad
+## La radio: primero el sintonizador, luego internet
 
-Un teléfono Android no expone ningún sintonizador de FM a las aplicaciones. No es una limitación de
-dumbOS: `android.jar` (API 34) no tiene ni una sola clase de radio, y las APIs internas de los chips
-(`vendor.*`, `com.android.fmradio`) están vetadas para apps normales. Solo el firmware del fabricante
-puede encender la antena FM; una app descargada de una APK no puede.
+Android **no** da a las apps una API de FM: en el `android.jar` de API 34 no hay ni una clase de
+`broadcastradio` o `hardware/fm`, y los enganches del chip están vetados por las restricciones de
+API oculta. Ninguna APK puede encender la antena por su cuenta.
 
-Así que la radio de dumbOS hace lo único honesto que puede hacer: **usa el dial para sintonizar
-emisoras reales por internet**. Cada frecuencia memorizada es una emisora que existe, y al pulsar
-**OK** el teléfono se conecta a su *stream* y lo decodifica él mismo:
+Pero el teléfono **sí** tiene FM, y su propia app de radio la controla. Esa app publica lo que
+sintoniza como una *sesión de medios* del sistema, y las sesiones de medios son API pública. Así que
+dumbOS hace lo que sí puede hacer con el hardware:
 
 ```
-https://…/emisora.mp3  →  HttpURLConnection (redirecciones, .m3u/.pls, ICY)
-                       →  MediaCodec (MP3 / AAC / Vorbis)
-                       →  AudioTrack (PCM 44,1 kHz estéreo)
+1. FmTuner busca la sesión de la radio del fabricante (com.android.fmradio,
+   com.sec.android.app.fm, com.miui.fm, com.huawei.fmradio, ...).
+2. Si existe, OK arranca y para ESA radio con transportControls, y el dial
+   muestra la frecuencia que el chip dice que está sintonizando.
+3. Si no existe, la radio del teléfono no es accesible y dumbOS lo dice.
 ```
 
-Sin librerías de terceros, sin `MediaPlayer` opaco. Consecuencias de hacerlo así:
+Con el sintonizador real en marcha, el audio sale por la ruta de audio del firmware: es FM de
+verdad, con antena. dumbOS es el mando, no el receptor.
 
-- La barra de estado dice la verdad: **CONECTANDO**, **SONANDO**, **PARADO** o **SIN SEÑAL: …**.
-  Si el *stream* muere o no entrega audio durante 12 s, el decodificador se rinde y lo dice; no
-  reproduce estática grabada para aparentar que hay señal.
-- Necesita datos (wifi o móvil). La FM clásica no gastaba datos; esto sí. Es el precio de que suene.
+Si la sesión no aparece, la pantalla **no finge**: dice por qué.
+
+| Lo que ves | Lo que pasa | Qué hacer |
+|---|---|---|
+| `DALE ACCESO AL PUENTE PARA USAR LA FM` | Mediashow: sin el permiso de acceso a notificaciones el sistema oculta las sesiones | **OK** abre esa página; activa dumbOS |
+| `ESTE TELEFONO NO EXPONE SINTONIZADOR` | No hay app de radio FM con sesión de medios | usa la radio por internet, que sigue ahí |
+| `ABRE LA RADIO DEL TELEFONO UNA VEZ` | Hay app de radio pero no ha publicado sesión todavía | ábrela una vez y vuelve |
+
+### Radio por internet, para cuando el chip no es accesible
+
+El dial es el mismo, y las 13 frecuencias memorizadas son emisoras reales que dumbOS conecta y
+decodifica él mismo (`HttpURLConnection` → `MediaCodec` → `AudioTrack`). La pantalla las etiqueta
+como **INTERNET** para que nunca se confundan con la FM.
+
 - Las emisoras cambian de URL con el tiempo. El catálogo vive en `tools/stations.json`
   (`key/name/desc/freq/fmt/url`), y `python3 tools/gen_stations.py` genera desde ahí
   `app/.../radio/Stations.kt` y `web/stations.js`. **No edites esos dos ficheros a mano.**
-- `python3 tools/check_streams.py` comprueba las 13 URLs desde la red real y saca una tabla. En CI
-  corre en cada push (sin bloquear el build, porque una emisora puede estar en mantenimiento) y el
-  resultado queda en el resumen del *workflow* y en un comentario del commit, que sí es
-  legible desde cualquier sitio.
-
-  Comprobado el 24-11-2026, **13 de 13** emisoras responden con audio (tabla completa en el
-  comentario de commit de ese run). Por el camino cayeron cinco que estaban en la primera lista:
-  EUROPA FM y MELODÍA FM (su host devuelve 403 a IPs de centro de datos; no es el *User-Agent*,
-  se probaron seis variantes), ROCK FM y CADENA 100 (solo publican HLS, que este decodificador no
-  soporta) y RADIO NACIONAL (su antiguo host ya no resuelve). Una emisora que siempre dice
-  SIN SEÑAL no merece una frecuencia: sus diales son ahora RADIO 5, LOS40 DANCE y LOS40 CLASSIC.
+- `python3 tools/check_streams.py` comprueba las 13 URLs desde la red real. En CI corre en cada push
+  (sin bloquear el build, porque una emisora puede estar en mantenimiento) y el resultado queda en
+  el resumen del *workflow* y en un comentario del commit.
+- Comprobado el 24-11-2026, **13 de 13** emisoras responden con audio. Por el camino cayeron cinco:
+  EUROPA FM y MELODÍA FM (su host devuelve 403 a IPs de centro de datos; se probaron seis variantes
+  de cabeceras), ROCK FM y CADENA 100 (solo publican HLS) y RADIO NACIONAL (su host ya no resuelve).
+  Sus diales son ahora RADIO 5, LOS40 DANCE y LOS40 CLASSIC.
 
 ## Los modos de notificación
 

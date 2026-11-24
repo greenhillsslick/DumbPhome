@@ -1480,8 +1480,8 @@ function drawRadio(ctx, h, dragging) {
 
   // station card
   const cardY = Math.max(cy + 70, Math.floor(h * 0.62));
-  pill(ctx, 6, cardY, D.W - 12, 66, th.panel);
-  Pixel.frame(ctx, 6, cardY, D.W - 12, 64, near ? th.ink : th.dim);
+  pill(ctx, 6, cardY, D.W - 12, 78, th.panel);
+  Pixel.frame(ctx, 6, cardY, D.W - 12, 76, near ? th.ink : th.dim);
   if (near) {
     Pixel.drawCenter(ctx, near[1], D.W/2, cardY + 8, SZ.BODY, th.ink);
     Pixel.drawCenter(ctx, near[0].toFixed(1) + ' MHZ', D.W/2, cardY + 25, SZ.SMALL, th.dim);
@@ -1490,6 +1490,8 @@ function drawRadio(ctx, h, dragging) {
     const live = (typeof RadioAudio !== 'undefined') ? RadioAudio.isWanted() : State.radioOn;
     const st = audioStatus || (live ? 'CONECTANDO' : 'OK PARA SONAR');
     Pixel.drawCenter(ctx, st, D.W/2, cardY + 41, SZ.SMALL, live ? th.ink : th.dim);
+    // Say plainly which radio this is: the browser has no aerial either.
+    Pixel.drawCenter(ctx, 'POR INTERNET', D.W/2, cardY + 56, SZ.SMALL, th.dim);
   } else {
     Pixel.drawCenter(ctx, 'SIN EMISORA', D.W/2, cardY + 14, SZ.BODY, th.dim);
     Pixel.drawCenter(ctx, 'SINTONIZA', D.W/2, cardY + 32, SZ.SMALL, th.dim);

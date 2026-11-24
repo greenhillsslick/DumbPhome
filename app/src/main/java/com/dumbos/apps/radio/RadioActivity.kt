@@ -25,13 +25,19 @@ import kotlin.math.min
  *
  * Android has no public FM tuner API (there is no android.hardware.fm package
  * and no tuner class in the SDK), so no app can honestly promise to receive
- * broadcast radio on a phone without the vendor's private SDK. What this screen
- * does instead is receive the stations over the network and keep the analogue
- * metaphor: a draggable dial where each memorised frequency *is* a real station
- * stream. Same gesture, real audio.
+ * broadcast radio on a phone without the vendor's private SDK: the FM chip has
+ * no public API, and the vendor hooks are blocked by the non-SDK restrictions.
  *
- * Streams are decoded with MediaCodec and played through AudioTrack by
- * [StreamPlayer], with no third-party libraries.
+ * There are two sources, in this order:
+ *
+ *  1. **The phone's own tuner** ([FmTuner]). If the device ships an FM radio app,
+ *      it publishes what it is tuned to as a media session, and dumbOS drives
+ *      that session: real FM, real hardware, the firmware's own audio path.
+ *  2. **Internet radio** ([StreamPlayer]), for phones whose tuner is genuinely
+ *      unreachable. Same dial, real stations, decoded with MediaCodec.
+ *
+ * The screen always says which one is playing. It never presents a stream as if
+ * it were the aerial.
  */
 class RadioActivity : OsActivity() {
 
@@ -44,6 +50,11 @@ class RadioActivity : OsActivity() {
     private var stateText = "PULSA OK PARA SONAR"
     private var nowPlaying = ""
     private var errorText = ""
+    /** Non-null only when a real tuner session was actually found. */
+    private var fm: FmTuner? = null
+    private var fmSession: FmTuner.Session? = null
+    private var fmPlaying = false
+    private var fmTitle = ""
     private val handler = Handler(Looper.getMainLooper())
 
     /** Repaints the small text strip without rebuilding the view tree. */
@@ -104,6 +115,56 @@ class RadioActivity : OsActivity() {
 
     override fun onCreateOs(savedInstanceState: Bundle?) {
         handler.post(ticker)
+        fm = FmTuner.discover(this)
+        fm?.onChange = {
+            handler.post { syncFm() }
+        }
+        fm?.startWatching()
+        syncFm()
+    }
+
+    /**
+     * Reads the tuner session and mirrors it into the dial. If a real FM session
+     * exists, the frequency shown is what the hardware is tuned to, and any
+     * internet stream is stopped first: two radios playing at once is a bug.
+     */
+    /** Why the hardware tuner is not usable, in words a person can act on. */
+    private fun fmReason(): String = when {
+        !FmTuner.listenerEnabled(this) -> "DALE ACCESO AL PUENTE PARA USAR LA FM"
+        fm == null -> "ESTE TELEFONO NO EXPONE SINTONIZADOR"
+        fm?.current() == null -> "ABRE LA RADIO DEL TELEFONO UNA VEZ"
+        else -> ""
+    }
+
+    private fun syncFm() {
+        val tuner = fm ?: run {
+            fmSession = null
+            refreshInfo()
+            return
+        }
+        val session = tuner.current()
+        val st = tuner.state()
+        fmSession = session
+        fmPlaying = st?.playing == true
+        fmTitle = listOfNotNull(st?.title?.takeIf { it.isNotBlank() }, st?.subtitle?.takeIf { it.isNotBlank() })
+            .joinToString(" ")
+        if (session != null) {
+            // The hardware is authoritative: stop the stream and follow it.
+            if (playing) stopPlayback("FM")
+            st?.frequency?.let { f ->
+                if (f in 70f..110f && abs(f - freq) > 0.05f) {
+                    freq = f
+                    dial?.freq = f
+                    dial?.invalidate()
+                }
+            }
+            stateText = when {
+                fmPlaying -> "FM" + if (fmTitle.isNotEmpty()) " " + fmTitle else ""
+                else -> "FM EN PAUSA"
+            }
+            setKeys("ENCENDER", "EMISORAS")
+        }
+        refreshInfo()
     }
 
     // ---------------------------------------------------------------------
@@ -138,6 +199,39 @@ class RadioActivity : OsActivity() {
     }
 
     private fun toggle() {
+        if (!FmTuner.listenerEnabled(this)) {
+            // Without this grant the tuner is invisible. Opening the settings page
+            // is the only useful thing OK can do here.
+            toast("ACTIVA dumbOS EN ACCESO A NOTIFICACIONES")
+            FmTuner.requestListener(this)
+            return
+        }
+        if (fm?.current() == null && FmTuner.hasRadioApp(this)) {
+            // The phone HAS FM, but its app has not published a session yet.
+            // Opening it is what makes the hardware visible; then this screen
+            // takes over as its remote control.
+            if (FmTuner.openRadioApp(this)) {
+                toast("ABRIENDO LA RADIO DEL TELEFONO")
+            } else {
+                toast("NO SE PUDO ABRIR SU RADIO")
+            }
+            return
+        }
+        val tuner = fm
+        if (tuner != null && tuner.current() != null) {
+            // A real tuner is present: start/pause *it*, never a stream. The
+            // audio path is the firmware's, which is the whole point.
+            val ok = if (fmPlaying) tuner.pause() else tuner.play()
+            if (!ok) {
+                errorText = "EL SINTONIZADOR NO RESPONDE"
+                stateText = "SIN SEÑAL"
+            } else {
+                errorText = ""
+            }
+            handler.postDelayed({ syncFm() }, 400)
+            refreshInfo()
+            return
+        }
         if (playing) {
             stopPlayback("PARADO")
         } else {
@@ -214,16 +308,30 @@ class RadioActivity : OsActivity() {
 
     override fun openMenu() {
         val list = ArrayList<String>()
+        val tuner = fm
+        val hasTuner = tuner != null && tuner.current() != null
+        val needGrant = !FmTuner.listenerEnabled(this)
+        if (needGrant) list.add("ACTIVAR FM (PERMISO)")
+        if (hasTuner) list.add("FM DEL TELEFONO")
+        val offset = (if (needGrant) 1 else 0) + (if (hasTuner) 1 else 0)
         Stations.ALL.forEach { list.add(String.format("%.1f", it.freq) + " " + it.name) }
         list.add("VOLUMEN")
         showMenu("EMISORAS", list) { i ->
-            when (i) {
-                in 0 until Stations.ALL.size -> {
-                    val station = Stations.ALL[i]
+            when {
+                needGrant && i == 0 -> {
+                    FmTuner.requestListener(this)
+                }
+                hasTuner && i == if (needGrant) 1 else 0 -> {
+                    val ok = tuner?.play() == true
+                    if (!ok) toast("EL SINTONIZADOR NO RESPONDE") else toast("FM DEL TELEFONO")
+                    handler.postDelayed({ syncFm() }, 400)
+                }
+                i in offset until offset + Stations.ALL.size -> {
+                    val station = Stations.ALL[i - offset]
                     setFreq(station.freq)
                     startPlayback(station)
                 }
-                Stations.ALL.size -> {
+                i == offset + Stations.ALL.size -> {
                     showMenu("VOLUMEN", listOf("BAJO", "MEDIO", "ALTO", "SILENCIO")) { v ->
                         volume = listOf(0.3f, 0.6f, 1f, 0f)[v]
                         getSharedPreferences("dumbos.radio", MODE_PRIVATE)
@@ -249,6 +357,9 @@ class RadioActivity : OsActivity() {
         handler.removeCallbacks(ticker)
         player?.stop()
         player = null
+        // Stop watching the tuner, but never stop the user's FM: the firmware's
+        // radio keeps playing when dumbOS is out of the way.
+        fm?.stopWatching()
         super.onDestroy()
     }
 
@@ -280,16 +391,35 @@ class RadioActivity : OsActivity() {
 
     internal fun statusLine(): String {
         val station = Stations.nearest(freq)
+        // Hardware first: if the tuner is ours, that is the truth on screen.
+        if (fmSession != null) {
+            val name = fmTitle.ifEmpty { fmSession?.app ?: "SINTONIZADOR" }
+            return when {
+                errorText.isNotEmpty() -> "SIN SEÑAL: " + errorText
+                fmPlaying -> "[ FM REAL ] " + name
+                else -> "FM EN PAUSA · " + (fmSession?.app ?: "SINTONIZADOR")
+            }
+        }
+        val reason = fmReason()
         return when {
             errorText.isNotEmpty() -> "SIN SEÑAL: " + errorText
             buffering -> "CONECTANDO..."
-            playing && station != null -> "[ " + stateText + " ] " + station.name
-            station != null -> stateText + " " + station.desc
+            playing && station != null -> "[ INTERNET ] " + station.name
+            station != null -> station.desc
             else -> stateText
-        }
+        } + if (reason.isNotEmpty()) "" else ""
     }
 
+    /** True when the screen must admit that the aerial is not in play. */
+    internal fun isInternetFallback(): Boolean = fmSession == null
+
     internal fun subLine(): String {
+        if (fmSession != null) {
+            return if (fmPlaying) "SINTONIZADOR DEL TELEFONO" else "TOCA OK PARA ENCENDER LA FM"
+        }
+        // No hardware: say why, not just "nothing here".
+        val reason = fmReason()
+        if (reason.isNotEmpty()) return reason
         if (nowPlaying.isNotEmpty()) return "AHORA: " + nowPlaying
         val station = Stations.nearest(freq)
         return if (station != null) station.desc else "ARRASTRA EL DIAL"

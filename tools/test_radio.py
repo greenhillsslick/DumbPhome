@@ -142,6 +142,66 @@ def test_player_never_fakes_audio():
     )
 
 
+def test_real_fm_bridge():
+    """The hardware path must exist, and must never be faked."""
+    src = kotlin("FmTuner.kt")
+
+    check("there is a real FM bridge", "MediaSessionManager" in src)
+    check("it drives the phone's own tuner", "transportControls.play()" in src)
+    check("it reads back what the tuner plays", "PlaybackState.STATE_PLAYING" in src)
+    check("it refuses to run without the listener grant", "listenerEnabled" in src)
+    check(
+        "it can ask for that grant",
+        "requestListener" in src,
+        "otherwise a phone with FM would look like a phone without",
+    )
+    check(
+        "no internet package is treated as a tuner",
+        "streamtheworld" not in src and "flumotion" not in src,
+    )
+
+    act = kotlin("RadioActivity.kt")
+    check("the screen prefers the real tuner", "if (tuner != null && tuner.current() != null)" in act)
+    check("it labels streamed audio as internet", "[ INTERNET ]" in act)
+    check("it labels hardware audio as FM", "FM REAL" in act)
+    check(
+        "it explains why hardware FM is unavailable",
+        "ESTE TELEFONO NO EXPONE SINTONIZADOR" in act,
+    )
+    check("leaving the screen does not kill the user's FM", "never stop the user's FM" in act)
+    check(
+        "it can open the OEM radio app when no session exists yet",
+        "openRadioApp" in src and "openRadioApp" in act,
+        "a phone with FM but no published session must not be reported as having no FM",
+    )
+    check(
+        "the manifest declares the listener description",
+        "listener_desc" in (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8"),
+        "the user must be told why dumbOS asks for notification access",
+    )
+
+
+def test_messages_shows_the_content():
+    """A thread that opens blank is the bug users actually hit."""
+    src = (ROOT / "app/src/main/java/com/dumbos/apps/sms/MessagesActivity.kt").read_text(encoding="utf-8")
+    check(
+        "the conversation view receives the loaded messages",
+        re.search(r"val v = ConversationView\(this\)\.also \{[\s\S]{0,300}?it\.messages = messages", src)
+        is not None,
+        "creating the view after paginate() leaves it with the empty default",
+    )
+    check(
+        "the view also receives the page",
+        re.search(r"it\.messages = messages[\s\S]{0,80}?it\.page = page", src) is not None,
+    )
+    # A body of only spaces must not produce a zero-height, invisible bubble.
+    check(
+        "a message always draws at least one line",
+        re.search(r"TYPO\.wrap\(m\.body[\s\S]{0,200}?lines\.size", src) is not None,
+        "the bubble height comes from the wrapped line count",
+    )
+
+
 def test_activity_is_honest():
     act = kotlin("RadioActivity.kt")
     check("the screen can say SIN SEÑAL", "SIN SEÑAL" in act)
@@ -193,6 +253,8 @@ def main():
     test_catalogue()
     test_generated_matches_json()
     test_player_never_fakes_audio()
+    test_real_fm_bridge()
+    test_messages_shows_the_content()
     test_activity_is_honest()
     test_web_audio()
     test_web_screen()
