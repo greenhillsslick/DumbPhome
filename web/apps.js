@@ -501,10 +501,9 @@ const WA = {
 // ---------------------------------------------------------------------------
 // RADIO FM (the dial)
 // ---------------------------------------------------------------------------
-const STATIONS = [
-  [87.6,'RADIO VALENCIA'], [89.2,'CADENA SOL'], [91.5,'FM 91'], [94.8,'RADIO CLASICA'],
-  [98.3,'LOS40'], [101.1,'ROCK FM'], [103.7,'RADIO MAR'], [106.4,'NOCTURNA'],
-];
+// The catalogue comes from tools/stations.json via tools/gen_stations.py, so the
+// preview and the APK always agree on frequencies and stream URLs.
+const STATION_PAIRS = STATIONS.map(s => [s.freq, s.name]);
 
 function drawRadio(ctx, h, dragging) {
   const th = State.theme;
@@ -515,24 +514,27 @@ function drawRadio(ctx, h, dragging) {
   const txt = freq.toFixed(1);
   Pixel.drawCenter(ctx, txt, D.W/2, 8, SZ.TITLE, th.ink);
   Pixel.draw(ctx, 'MHZ', D.W/2 + Pixel.measure(ctx, txt, SZ.TITLE)/2 + 8, 8 + 21 - 12, SZ.SMALL, th.dim);
+  // Name of whatever the pointer is on: the dial has to say what you tuned.
+  const here = (typeof StationMeta === 'function') ? StationMeta(freq) : null;
+  Pixel.drawCenter(ctx, here ? here.name : 'SIN EMISORA', D.W/2, 34, SZ.SMALL, here ? th.ink : th.dim);
 
-  const cy = Math.floor(h * 0.38);
+  const cy = Math.floor(h * 0.30);
   pill(ctx, margin, cy - 30, D.W - margin*2, 1, th.dim);
   pill(ctx, margin, cy + 30, D.W - margin*2, 1, th.dim);
   for (let f = 87.5; f <= 108.01; f += 0.5) {
     const x = xOf(f);
     const whole = Math.abs((f * 10) % 10) < 0.001;
-    const tick = whole ? 12 : 6;
+    const tick = whole ? 7 : 4;
     ctx.fillStyle = Math.abs(f - freq) < 0.25 ? th.ink : th.dim;
+    // upward from the lower rail, so nothing can collide with the numbers
     ctx.fillRect(x, cy + 30 - tick, 1, tick);
     if (whole && Math.floor(f) % 3 === 0) {
-      Pixel.drawCenter(ctx, String(Math.floor(f)), x, cy + 36, SZ.SMALL, th.dim);
-      pill(ctx, x, cy + 34, 1, 2, th.dim);
+      Pixel.drawCenter(ctx, String(Math.floor(f)), x, cy + 34, SZ.SMALL, th.dim);
     }
   }
   // nearest station lock
   let near = null, best = 0.45;
-  for (const [f, name] of STATIONS) { const d = Math.abs(f - freq); if (d < best) { best = d; near = [f, name]; } }
+  for (const [f, name] of STATION_PAIRS) { const d = Math.abs(f - freq); if (d < best) { best = d; near = [f, name]; } }
   const strength = near ? Math.max(0, 1 - best / 0.45) : 0;
 
   // pointer
@@ -557,17 +559,20 @@ function drawRadio(ctx, h, dragging) {
   }
 
   // station card
-  const cardY = cy + 66;
-  pill(ctx, 6, cardY, D.W - 12, 56, th.panel);
-  Pixel.frame(ctx, 6, cardY, D.W - 12, 54, near ? th.ink : th.dim);
+  const cardY = Math.max(cy + 70, Math.floor(h * 0.62));
+  pill(ctx, 6, cardY, D.W - 12, 66, th.panel);
+  Pixel.frame(ctx, 6, cardY, D.W - 12, 64, near ? th.ink : th.dim);
   if (near) {
-    Pixel.drawCenter(ctx, near[1], D.W/2, cardY + 9, SZ.BODY, th.ink);
-    Pixel.drawCenter(ctx, near[0].toFixed(1) + ' MHZ', D.W/2, cardY + 26, SZ.SMALL, th.dim);
-    const st = State.radioOn ? '[ BARS ] SONANDO' : 'OK PARA SONAR';
-    Pixel.drawCenter(ctx, st, D.W/2, cardY + 41, SZ.SMALL, State.radioOn ? th.ink : th.dim);
+    Pixel.drawCenter(ctx, near[1], D.W/2, cardY + 8, SZ.BODY, th.ink);
+    Pixel.drawCenter(ctx, near[0].toFixed(1) + ' MHZ', D.W/2, cardY + 25, SZ.SMALL, th.dim);
+    // Real state from the player, never a decorative label.
+    const audioStatus = (typeof RadioAudio !== 'undefined') ? RadioAudio.status() : '';
+    const live = (typeof RadioAudio !== 'undefined') ? RadioAudio.isWanted() : State.radioOn;
+    const st = audioStatus || (live ? 'CONECTANDO' : 'OK PARA SONAR');
+    Pixel.drawCenter(ctx, st, D.W/2, cardY + 41, SZ.SMALL, live ? th.ink : th.dim);
   } else {
     Pixel.drawCenter(ctx, 'SIN EMISORA', D.W/2, cardY + 14, SZ.BODY, th.dim);
-    Pixel.drawCenter(ctx, 'GIRA EL DIAL', D.W/2, cardY + 32, SZ.SMALL, th.dim);
+    Pixel.drawCenter(ctx, 'SINTONIZA', D.W/2, cardY + 32, SZ.SMALL, th.dim);
   }
   // hint
   Pixel.drawCenter(ctx, 'ARRASTRA EL DIAL', D.W/2, h - 12, SZ.SMALL, th.dim);

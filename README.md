@@ -54,7 +54,7 @@ funcional. Todo responde al ratón, al tacto y al teclado real (`↑ ↓ ← →
 Cosas que probar:
 
 - **MENU → AJUSTES → TEMA / COLOR** para ver las cinco paletas. Tocar la cuadrícula de accesos rápidos con `←/→` también las previsualiza.
-- **Radio FM**: arrastra la aguja sobre la escala; las emisoras memorizadas tienen nombre y el dial silba cuando te acercas (sonido real con WebAudio; en la APK es `AudioTrack`).
+- **Radio FM**: arrastra la aguja y pulsa **OK**. Cada emisora memorizada es una emisora de verdad: la web reproduce su *stream* con `<audio>` y la APK lo conecta, lo decodifica y lo suena ella misma (`HttpURLConnection` → `MediaCodec` → `AudioTrack`). Si una emisora no responde, la pantalla dice **SIN SEÑAL** y deja de sonar; nunca hay estática fingida.
 - **WhatsApp**: abre una conversación, pulsa **OK** y escribe; verás cómo se puentea la respuesta.
 - **Navegador**: `MENU → IR A URL` abre páginas de demostración con el mismo motor de extracción de texto.
 
@@ -165,10 +165,40 @@ Dentro de dumbOS: `Ajustes → SER EL LAUNCHER` abre ese panel.
 | **Notas** | Lista, lector y editor de texto plano, guardado local. |
 | **Navegador** | Descarga HTTPS, quita *todas* las etiquetas, extrae el texto y una lista numerada de enlaces. Sin imágenes, sin scripts, sin cookies. |
 | **WhatsApp** | Lee las notificaciones de WhatsApp/Telegram/Signal mediante el plugin de acceso a notificaciones y las muestra como texto; responde con el compositor de WhatsApp. |
-| **Radio FM** | Dial analógico arrastrable de 87.5 a 108 MHz, 8 emisoras memorizadas, memoria de favoritos, sonido sintetizado (portadora + estática) y atenuación al salir de la app. |
+| **Radio FM** | Dial arrastrable de 87.5 a 108 MHz con 14 emisoras memorizadas; reproduce su *stream* real (MP3/AAC) con decodificador propio, muestra lo que suena y para al salir. Sin datos, **SIN SEÑAL**. |
 | **Alarmas** | Alarmas exactas que sobreviven al reinicio, repetición por días de la semana, temporizador, pantalla de alarma a pantalla completa con posponer. |
 
 ![Notas](media/screens/notes.png) ![Correo](media/screens/mail.png) ![Navegador](media/screens/browser.png)
+
+## La radio: por qué no es FM de verdad
+
+Un teléfono Android no expone ningún sintonizador de FM a las aplicaciones. No es una limitación de
+dumbOS: `android.jar` (API 34) no tiene ni una sola clase de radio, y las APIs internas de los chips
+(`vendor.*`, `com.android.fmradio`) están vetadas para apps normales. Solo el firmware del fabricante
+puede encender la antena FM; una app descargada de una APK no puede.
+
+Así que la radio de dumbOS hace lo único honesto que puede hacer: **usa el dial para sintonizar
+emisoras reales por internet**. Cada frecuencia memorizada es una emisora que existe, y al pulsar
+**OK** el teléfono se conecta a su *stream* y lo decodifica él mismo:
+
+```
+https://…/emisora.mp3  →  HttpURLConnection (redirecciones, .m3u/.pls, ICY)
+                       →  MediaCodec (MP3 / AAC / Vorbis)
+                       →  AudioTrack (PCM 44,1 kHz estéreo)
+```
+
+Sin librerías de terceros, sin `MediaPlayer` opaco. Consecuencias de hacerlo así:
+
+- La barra de estado dice la verdad: **CONECTANDO**, **SONANDO**, **PARADO** o **SIN SEÑAL: …**.
+  Si el *stream* muere o no entrega audio durante 12 s, el decodificador se rinde y lo dice; no
+  reproduce estática grabada para aparentar que hay señal.
+- Necesita datos (wifi o móvil). La FM clásica no gastaba datos; esto sí. Es el precio de que suene.
+- Las emisoras cambian de URL con el tiempo. El catálogo vive en `tools/stations.json`
+  (`key/name/desc/freq/fmt/url`), y `python3 tools/gen_stations.py` genera desde ahí
+  `app/.../radio/Stations.kt` y `web/stations.js`. **No edites esos dos ficheros a mano.**
+- `python3 tools/check_streams.py` comprueba las 14 URLs desde la red real y saca una tabla. En CI
+  corre en cada push (sin bloquear el build, porque una emisora puede estar en mantenimiento) y el
+  resultado queda en el resumen del *workflow*.
 
 ## Los modos de notificación
 

@@ -1,76 +1,126 @@
-// The preview's radio: a tiny WebAudio carrier + static, the browser twin of
-// the AudioTrack synth in RadioActivity.kt.
-'use strict';
+// Radio for the preview.
+//
+// The APK decodes the station streams with MediaCodec; here the browser does it
+// with an <audio> element pointed at the same URL, which is the closest possible
+// twin: same catalogue, same dial, real audio.
+//
+// A stream that will not play is reported rather than faked, exactly like the
+// app's "SIN SEÑAL".
 
 const RadioAudio = (() => {
-  let ac = null, carrier = null, noise = null, gain = null, noiseGain = null;
-  let playing = false;
+  let el = null;          // <audio>
+  let current = null;     // station object or null
+  let vol = 0.7;
+  let wantPlay = false;
+  let lastError = '';
+  let startedAt = 0;
+  let watchdog = 0;
 
   function ensure() {
-    if (ac) return;
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return;
-    ac = new Ctor();
-    gain = ac.createGain();
-    gain.gain.value = 0;
-    gain.connect(ac.destination);
-    noiseGain = ac.createGain();
-    noiseGain.gain.value = 0;
-    noiseGain.connect(gain);
-
-    // pink-ish static
-    const len = ac.sampleRate * 2;
-    const buffer = ac.createBuffer(1, len, ac.sampleRate);
-    const data = buffer.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++) {
-      const white = Math.random() * 2 - 1;
-      last = (last + 0.02 * white) / 1.02;
-      data[i] = last * 3.2;
-    }
-    noise = ac.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
-    noise.connect(noiseGain);
-    noise.start();
-
-    carrier = ac.createOscillator();
-    carrier.type = 'triangle';
-    carrier.frequency.value = 220;
-    const cg = ac.createGain();
-    cg.gain.value = 0.5;
-    carrier.connect(cg);
-    cg.connect(gain);
-    carrier.start();
+    if (el) return el;
+    el = new Audio();
+    el.preload = 'none';
+    // Deliberately NOT setting crossOrigin: the audio is only ever played, never
+    // read sample by sample, and asking for CORS would make real stations (which
+    // do not send Access-Control-Allow-Origin) fail to load at all.
+    el.volume = vol;
+    el.addEventListener('playing', () => { lastError = ''; startedAt = Date.now(); });
+    el.addEventListener('error', () => {
+      // A network/decode failure is a real "no signal", not an autoplay block.
+      lastError = 'SIN SEÑAL';
+      wantPlay = false;
+    });
+    el.addEventListener('stalled', () => { if (wantPlay) lastError = 'BUFFER'; });
+    el.addEventListener('waiting', () => { if (wantPlay) lastError = 'BUFFER'; });
+    // A stream that simply ends (a dropped connection, a finite file) must not
+    // leave the dial claiming "SONANDO" for ever.
+    el.addEventListener('ended', () => { if (wantPlay) { lastError = 'SIN SEÑAL'; wantPlay = false; } });
+    el.addEventListener('pause', () => { if (wantPlay && el.ended) { lastError = 'SIN SEÑAL'; wantPlay = false; } });
+    el.addEventListener('timeupdate', () => { if (wantPlay && !el.paused) { lastError = ''; startedAt = startedAt || Date.now(); } });
+    // A stream can die silently: <audio> does not always fire 'error' when the
+    // server stops sending. Compare the clock against the wall clock instead.
+    watchdog = setInterval(() => {
+      if (!wantPlay || !el) return;
+      el.__pos = el.currentTime;
+      clearTimeout(el.__t);
+      el.__t = setTimeout(() => {
+        if (wantPlay && el && !el.paused && el.currentTime === el.__pos) {
+          lastError = 'SIN SEÑAL';
+          wantPlay = false;
+          try { el.pause(); } catch (e) {}
+        }
+      }, 6000);
+    }, 4000);
+    return el;
   }
 
-  function volume(v) {
-    if (!gain || !ac) return;
-    gain.gain.setTargetAtTime(playing ? v * 0.18 : 0, ac.currentTime, 0.06);
+  function urlOf(station) {
+    return station ? station.url : null;
   }
 
-  function on(stationFreq, v) {
+  function on(station, volume) {
     ensure();
-    playing = true;
-    if (!ac) return;
-    if (ac.state === 'suspended') ac.resume();
-    setStation(stationFreq);
-    volume(v);
+    if (typeof volume === 'number') vol = volume;
+    el.volume = vol;
+    current = station || null;
+    if (!current) { off(); return; }
+    lastError = '';
+    wantPlay = true;
+    el.src = current.url;
+    const attempt = el.play();
+    if (attempt && attempt.catch) {
+      attempt.catch((err) => {
+        // NotAllowedError = the browser blocked autoplay (a real limit: the
+        // preview needs one user gesture). Anything else is a stream problem.
+        const blocked = err && err.name === 'NotAllowedError';
+        lastError = blocked ? 'PULSA OK PARA SONAR' : 'SIN SEÑAL';
+        wantPlay = false;
+      });
+    }
   }
 
   function off() {
-    playing = false;
-    if (!ac) return;
-    gain.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+    wantPlay = false;
+    if (el) {
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    }
+    current = null;
+    lastError = '';
   }
 
-  function setStation(f) {
-    if (!ac || !carrier) return;
-    const locked = f !== null && f !== undefined;
-    carrier.frequency.setTargetAtTime(locked ? 180 + f * 1.2 : 180, ac.currentTime, 0.15);
-    noiseGain.gain.setTargetAtTime(locked ? 0.05 : 0.35, ac.currentTime, 0.12);
-    if (playing) volume(0.55);
+  /** Tuning: same station -> keep playing, different -> switch stream. */
+  function setStation(station) {
+    if (!station) {
+      if (wantPlay) { off(); lastError = 'ENTRE EMISORAS'; }
+      else current = null;
+      return;
+    }
+    if (current && current.key === station.key) return;
+    if (wantPlay) on(station, vol);
+    else current = station;
   }
 
-  return { ensure, on, off, setStation, volume };
+  function setVolume(v) {
+    vol = v;
+    if (el) el.volume = Math.max(0, Math.min(1, v));
+  }
+
+  function status() {
+    if (lastError) return lastError;
+    if (!wantPlay) return '';
+    if (!startedAt) return 'CONECTANDO';
+    return 'SONANDO';
+  }
+
+  /** True only when audio is genuinely playing. */
+  function isOn() {
+    return !!(wantPlay && el && !el.paused && el.currentTime > 0);
+  }
+
+  /** True when the user asked for sound and nothing failed yet. */
+  function isWanted() { return wantPlay; }
+
+  return { ensure, on, off, setStation, setVolume, status, isOn, isWanted };
 })();

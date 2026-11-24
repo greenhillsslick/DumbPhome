@@ -68,8 +68,21 @@ jobs:
       - name: Pixel invariants
         run: |
           python3 tools/test_pixels.py
+          python3 tools/test_radio.py
           python3 tools/gen.py && git diff --exit-code web/pixel-widgets.js \
-            app/src/main/java/com/dumbos/ui/PixelWidgets.kt
+            app/src/main/java/com/dumbos/ui/PixelWidgets.kt \
+            app/src/main/java/com/dumbos/apps/radio/Stations.kt web/stations.js \
+            web/dumbos.html
+
+      # The radio only predicts playback; the network is the only place a
+      # stream can be proved to answer. This never fails the build (stations
+      # go down for maintenance), but the table lands in the run summary so a
+      # dead station is visible instead of silently shipped.
+      - name: Check radio streams
+        continue-on-error: true
+        run: |
+          python3 tools/check_streams.py --timeout 8 | tee /tmp/streams.md
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then cat /tmp/streams.md >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Build debug APK
         run: |

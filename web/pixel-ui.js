@@ -197,7 +197,7 @@ const State = {
   screen: 'home',
   app: null,
   dialed: '',
-  radioFreq: 98.3,
+  radioFreq: 88.4,   // CADENA SER: the dial should start on a station
   radioOn: false,
   radioVol: 0.55,
   mail: [

@@ -367,9 +367,18 @@ function ok() {
       }};
       updateKeys(); draw(); return;
     case 'radio': {
-      State.radioOn = !State.radioOn;
-      if (State.radioOn) RadioAudio.on(StationNear(), State.radioVol); else RadioAudio.off();
-      updateKeys(); draw(); return;
+      // The flag follows the audio engine, never the other way round: if a
+      // stream fails, the key must go back to ENCENDER and say so.
+      if (RadioAudio.isWanted()) {
+        RadioAudio.off();
+      } else {
+        const st = StationNear();
+        if (!st) { toast('SIN EMISORA'); }
+        else RadioAudio.on(st, State.radioVol);
+      }
+      State.radioOn = RadioAudio.isWanted();
+      updateKeys(); draw();
+      return;
     }
     case 'alarm':
       State.alarms[AlarmApp.sel].on = !State.alarms[AlarmApp.sel].on;
@@ -487,10 +496,10 @@ function menuKey() {
       });
       return;
     case 'radio':
-      menu('EMISORAS', STATIONS.map(([f, n]) => f.toFixed(1) + ' ' + n), (i) => {
-        State.radioFreq = STATIONS[i][0];
-        if (!State.radioOn) { State.radioOn = true; RadioAudio.on(StationNear(), State.radioVol); }
-        else RadioAudio.setStation(StationNear());
+      menu('EMISORAS', STATIONS.map(s => s.freq.toFixed(1) + ' ' + s.name), (i) => {
+        State.radioFreq = STATIONS[i].freq;
+        RadioAudio.on(StationNear(), State.radioVol);
+        State.radioOn = RadioAudio.isWanted();
         updateKeys(); draw();
       });
       return;
@@ -559,6 +568,8 @@ function move(delta) {
   if (State.screen === 'radio') {
     State.radioFreq = clamp(Math.round((State.radioFreq + delta * 0.1) * 10) / 10, 87.5, 108);
     RadioAudio.setStation(StationNear());
+    // Tuning off a station is the same as losing it: silence, and say so.
+    if (!StationNear() && RadioAudio.isWanted()) { RadioAudio.off(); State.radioOn = false; }
   }
 }
 
@@ -580,10 +591,14 @@ function key(k) {
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+/** Nearest catalogue entry to the dial, or null. */
 function StationNear() {
-  let near = null, best = 0.45;
-  for (const [f] of STATIONS) { const d = Math.abs(f - State.radioFreq); if (d < best) { best = d; near = f; } }
-  return near;
+  return stationNearest(State.radioFreq);
+}
+
+/** Catalogue record for a frequency, for the station card. */
+function StationMeta(freq) {
+  return stationNearest(freq, 0.45);
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +665,7 @@ function radioDrag(e) {
   const f = 87.5 + (x - margin) / (D.W - margin * 2) * (108 - 87.5);
   State.radioFreq = clamp(Math.round(f * 10) / 10, 87.5, 108);
   RadioAudio.setStation(StationNear());
+  if (!StationNear() && RadioAudio.isWanted()) { RadioAudio.off(); State.radioOn = false; }
   draw();
 }
 
@@ -660,4 +676,13 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', resi
 down('__boot');
 wireRail();
 resize();
-setInterval(() => { if (!View.menu && !View.input && !View.modal) draw(); }, 1000);
+setInterval(() => {
+  if (View.menu || View.input || View.modal) return;
+  // The radio screen mirrors the audio engine once a second, so a stream that
+  // dies turns the soft key back to ENCENDER without any extra timers.
+  if (State.screen === 'radio' && typeof RadioAudio !== 'undefined') {
+    const wanted = RadioAudio.isWanted();
+    if (wanted !== State.radioOn) { State.radioOn = wanted; updateKeys(); }
+  }
+  draw();
+}, 1000);

@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-TAG = sys.argv[1] if len(sys.argv) > 1 else "v1.0.0"
+TAG = sys.argv[1] if len(sys.argv) > 1 else None
 
 
 def sh(*args: str) -> str:
@@ -48,6 +48,7 @@ version = re.search(
     r'versionName = "([^"]+)"', open("app/build.gradle.kts", encoding="utf-8").read()
 ).group(1)
 
+TAG = TAG or f"v{version}"
 lines = [
     f"# dumbOS {version}",
     "",
@@ -62,6 +63,7 @@ lines = [
     "- Launcher completo: intent HOME, lista de apps del sistema y búsqueda.",
     "- Cinco paletas monocromas (fósforo, ámbar, hielo, papel y monocromo).",
     "- Tres modos de notificación: SILENCIO, NO MOLESTAR y TODO.",
+    "- La radio suena de verdad: 14 emisoras por internet, decodificadas por la propia app.",
     "- Cero dependencias: solo APIs de Android.",
     "",
     "## Instalación",
@@ -72,6 +74,14 @@ lines = [
     "",
     "La clave de firma está en el repositorio (`signing/`), así que las versiones futuras "
     "se instalan encima sin desinstalar.",
+    "",
+    "## La radio, sin mentir",
+    "",
+    "Android no deja que una app encienda la antena de FM: no hay API pública ni clases en "
+    "`android.jar`, así que ninguna APK puede sintonizar FM de verdad. dumbOS usa el dial para "
+    "sintonizar emisoras reales por internet y las decodifica él mismo "
+    "(`HttpURLConnection` → `MediaCodec` → `AudioTrack`). Si una emisora no responde, la pantalla "
+    "dice **SIN SEÑAL** y no suena nada: no hay estática grabada para aparentar señal.",
     "",
     "## Comprobación",
     "",
