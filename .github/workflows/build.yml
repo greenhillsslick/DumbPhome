@@ -83,6 +83,10 @@ jobs:
         run: |
           python3 tools/check_streams.py --timeout 8 | tee /tmp/streams.md
           if [ -n "$GITHUB_STEP_SUMMARY" ]; then cat /tmp/streams.md >> "$GITHUB_STEP_SUMMARY"; fi
+          # Logs are not readable from every client; a commit comment is.
+          python3 tools/post_streams.py /tmp/streams.md || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build debug APK
         run: |
